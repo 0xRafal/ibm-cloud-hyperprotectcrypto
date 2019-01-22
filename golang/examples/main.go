@@ -143,7 +143,7 @@ func exampleStreamingCipher(conn *grpc.ClientConn) {
 }
 
 const (
-	address = "localhost:9876"
+	address = "zlxcn002.torolab.ibm.com:9876"
 )
 
 func main() {
