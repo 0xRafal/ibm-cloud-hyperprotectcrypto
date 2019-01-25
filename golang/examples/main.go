@@ -32,6 +32,27 @@ func exampleStreamingCipher(conn *grpc.ClientConn) {
 		KeyId:    uuid.NewV4().String(), //optional
 	}
 
+	datatodigest := []byte("Hello, world")
+	digestmsg := &pb.DigestInitRequest{
+		Mech: &pb.Mechanism{Mechanism: ep11.CKM_SHA_1},
+	}
+	digestResponse, err := cryptoClient.DigestInit(context.Background(), digestmsg)
+	if err != nil {
+		panic(fmt.Errorf("Digest init Error: %s\n", err))
+	}
+	digestRequest := &pb.DigestRequest{
+		State: digestResponse.State,
+		Data:  datatodigest,
+	}
+	//Digest(ctx context.Context, in *DigestRequest, opts ...grpc.CallOption) (*DigestResponse, error)
+	DigestResponse, err := cryptoClient.Digest(context.Background(), digestRequest)
+	if err != nil {
+		panic(fmt.Errorf("Digest Error: %s\n", err))
+	}
+	if err == nil {
+		fmt.Printf("%x\n", DigestResponse.Digest)
+	}
+
 	generateKeyStatus, err := cryptoClient.GenerateKey(context.Background(), keygenmsg)
 	if err != nil {
 		panic(fmt.Errorf("GenerateKey Error: %s\n", err))
@@ -46,7 +67,7 @@ func exampleStreamingCipher(conn *grpc.ClientConn) {
 		panic(fmt.Errorf("GenerateRandom Error: %s\n", err))
 	}
 	iv := rng.Rnd[:ep11.AES_BLOCK_SIZE]
-	fmt.Println("Generated IV")
+	fmt.Println("Generated IV %v", rng.Rnd)
 
 	encipherInitInfo := &pb.EncryptInitRequest{
 		Mech: &pb.Mechanism{Mechanism: ep11.CKM_AES_CBC_PAD, Parameter: iv},
@@ -140,6 +161,7 @@ func exampleStreamingCipher(conn *grpc.ClientConn) {
 	// Encrypted message
 	// Decrypted message
 	// Hello, this is a very long and creative message without any imagination
+
 }
 
 const (
