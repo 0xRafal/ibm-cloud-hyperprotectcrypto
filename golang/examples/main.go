@@ -32,27 +32,6 @@ func exampleStreamingCipher(conn *grpc.ClientConn) {
 		KeyId:    uuid.NewV4().String(), //optional
 	}
 
-	datatodigest := []byte("Hello, world")
-	digestmsg := &pb.DigestInitRequest{
-		Mech: &pb.Mechanism{Mechanism: ep11.CKM_SHA_1},
-	}
-	digestResponse, err := cryptoClient.DigestInit(context.Background(), digestmsg)
-	if err != nil {
-		panic(fmt.Errorf("Digest init Error: %s\n", err))
-	}
-	digestRequest := &pb.DigestRequest{
-		State: digestResponse.State,
-		Data:  datatodigest,
-	}
-	//Digest(ctx context.Context, in *DigestRequest, opts ...grpc.CallOption) (*DigestResponse, error)
-	DigestResponse, err := cryptoClient.Digest(context.Background(), digestRequest)
-	if err != nil {
-		panic(fmt.Errorf("Digest Error: %s\n", err))
-	}
-	if err == nil {
-		fmt.Printf("%x\n", DigestResponse.Digest)
-	}
-
 	generateKeyStatus, err := cryptoClient.GenerateKey(context.Background(), keygenmsg)
 	if err != nil {
 		panic(fmt.Errorf("GenerateKey Error: %s\n", err))
@@ -162,6 +141,55 @@ func exampleStreamingCipher(conn *grpc.ClientConn) {
 	// Decrypted message
 	// Hello, this is a very long and creative message without any imagination
 
+	//Digest using single operation
+	digestData := []byte("This is the data longer than 64 bytes so that multiple digest operation is needed")
+	digestInitRequest := &pb.DigestInitRequest{
+		Mech: &pb.Mechanism{Mechanism: ep11.CKM_SHA_1},
+	}
+	digestInitResponse, err := cryptoClient.DigestInit(context.Background(), digestInitRequest)
+	if err != nil {
+		panic(fmt.Errorf("Digest init error: %s", err))
+	}
+	digestRequest := &pb.DigestRequest{
+		State: digestInitResponse.State,
+		Data:  digestData,
+	}
+	digestResponse, err := cryptoClient.Digest(context.Background(), digestRequest)
+	if err != nil {
+		panic(fmt.Errorf("Digest error: %s", err))
+	} else {
+		fmt.Printf("Digest data using single digest operation: %x\n", digestResponse.Digest)
+	}
+	//Digest using mutiple operations
+	digestInitResponse, err = cryptoClient.DigestInit(context.Background(), digestInitRequest)
+	if err != nil {
+		panic(fmt.Errorf("Digest init error: %s", err))
+	}
+	digestUpdateRequest := &pb.DigestUpdateRequest{
+		State: digestInitResponse.State,
+		Data:  digestData[:64],
+	}
+	digestUpdateResponse, err := cryptoClient.DigestUpdate(context.Background(), digestUpdateRequest)
+	if err != nil {
+		panic(fmt.Errorf("Digest update error: %s", err))
+	}
+	digestUpdateRequest = &pb.DigestUpdateRequest{
+		State: digestUpdateResponse.State,
+		Data:  digestData[64:],
+	}
+	digestUpdateResponse, err = cryptoClient.DigestUpdate(context.Background(), digestUpdateRequest)
+	if err != nil {
+		panic(fmt.Errorf("Digest Update Error: %s", err))
+	}
+	digestFinalRequestInfo := &pb.DigestFinalRequest{
+		State: digestUpdateResponse.State,
+	}
+	digestFinalResponse, err := cryptoClient.DigestFinal(context.Background(), digestFinalRequestInfo)
+	if err != nil {
+		panic(fmt.Errorf("Digest Final Error: %s", err))
+	} else {
+		fmt.Printf("Digest data using multiple operations: %x\n", digestFinalResponse.Digest)
+	}
 }
 
 const (
