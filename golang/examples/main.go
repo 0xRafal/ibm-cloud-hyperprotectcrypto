@@ -191,34 +191,23 @@ func exampleStreamingCipher(conn *grpc.ClientConn) {
 		fmt.Printf("Digest data using multiple operations: %x\n", digestFinalResponse.Digest)
 	}
 
-	var modulusBits int64
-	modulusBits = 2048
-	subject := []byte("subject")
-	id := []byte("id")
-	publicExponent := []byte{0x11}
-
+	//RSA key pair, Sign and verify
+	publicExponent := []byte{0x11} //could be 0x101
 	publicKeyTemplate := util.NewAttributeMap(
-		//util.NewAttribute(ep11.CKA_VALUE_LEN, (uint64)(keyLen/8)),
 		util.NewAttribute(ep11.CKA_ENCRYPT, true),
-		util.NewAttribute(ep11.CKA_VERIFY, true),
-		util.NewAttribute(ep11.CKA_WRAP, true),
-		util.NewAttribute(ep11.CKA_MODULUS_BITS, modulusBits),
+		util.NewAttribute(ep11.CKA_VERIFY, true), //to verify a signature
+		util.NewAttribute(ep11.CKA_WRAP, true),   //to wrap a key
+		util.NewAttribute(ep11.CKA_MODULUS_BITS, uint64(2048)),
 		util.NewAttribute(ep11.CKA_PUBLIC_EXPONENT, publicExponent),
-		//util.NewAttribute(ep11.CKA_PUBLIC_EXPONENT, uint64(0x101)), works, same as test case
-
-		util.NewAttribute(ep11.CKA_EXTRACTABLE, false), // set to false!
+		util.NewAttribute(ep11.CKA_EXTRACTABLE, false),
 	)
 	privateKeyTemplate := util.NewAttributeMap(
-		//util.NewAttribute(ep11.CKA_VALUE_LEN, (uint64)(keyLen/8)),
 		util.NewAttribute(ep11.CKA_PRIVATE, true),
-		util.NewAttribute(ep11.CKA_SUBJECT, subject),
-		util.NewAttribute(ep11.CKA_ID, id),
 		util.NewAttribute(ep11.CKA_SENSITIVE, true),
 		util.NewAttribute(ep11.CKA_DECRYPT, true),
-		util.NewAttribute(ep11.CKA_SIGN, true),
-		util.NewAttribute(ep11.CKA_UNWRAP, true),
-
-		util.NewAttribute(ep11.CKA_EXTRACTABLE, false), // set to false!
+		util.NewAttribute(ep11.CKA_SIGN, true),   //to generate signature
+		util.NewAttribute(ep11.CKA_UNWRAP, true), //to unwrap a key
+		util.NewAttribute(ep11.CKA_EXTRACTABLE, false),
 	)
 	generateKeypairRequest := &pb.GenerateKeyPairRequest{
 		Mech:            &pb.Mechanism{Mechanism: ep11.CKM_RSA_PKCS_KEY_PAIR_GEN},
@@ -227,12 +216,11 @@ func exampleStreamingCipher(conn *grpc.ClientConn) {
 		PrivKeyId:       uuid.NewV4().String(),
 		PubKeyId:        uuid.NewV4().String(),
 	}
-
 	generateKeyPairStatus, err := cryptoClient.GenerateKeyPair(context.Background(), generateKeypairRequest)
 	if err != nil {
 		panic(fmt.Errorf("GenerateKeyPair Error: %s", err))
 	}
-	fmt.Println("Generated PKCS Key pairs")
+	fmt.Println("Generated PKCS key pairs successfully")
 	signInitRequest := &pb.SignInitRequest{
 		Mech:    &pb.Mechanism{Mechanism: ep11.CKM_SHA1_RSA_PKCS},
 		PrivKey: generateKeyPairStatus.PrivKey,
@@ -273,6 +261,32 @@ func exampleStreamingCipher(conn *grpc.ClientConn) {
 		panic(fmt.Errorf("Verify Error: %s", err))
 	}
 	fmt.Println("Verify successfully")
+
+	//ECDSA key pair
+	ecParameters := []byte{0x06, 0x08, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07}
+	publicKeyECDSATemplate := util.NewAttributeMap(
+		util.NewAttribute(ep11.CKA_VERIFY, true), //to verify a signature
+		util.NewAttribute(ep11.CKA_EC_PARAMS, ecParameters),
+		util.NewAttribute(ep11.CKA_EXTRACTABLE, false),
+	)
+	privateKeyECDSATemplate := util.NewAttributeMap(
+		util.NewAttribute(ep11.CKA_PRIVATE, true),
+		util.NewAttribute(ep11.CKA_SENSITIVE, true),
+		util.NewAttribute(ep11.CKA_SIGN, true), //to generate signature
+		util.NewAttribute(ep11.CKA_EXTRACTABLE, false),
+	)
+	generateECDSAKeypairRequest := &pb.GenerateKeyPairRequest{
+		Mech:            &pb.Mechanism{Mechanism: ep11.CKM_EC_KEY_PAIR_GEN},
+		PubKeyTemplate:  publicKeyECDSATemplate,
+		PrivKeyTemplate: privateKeyECDSATemplate,
+		PrivKeyId:       uuid.NewV4().String(),
+		PubKeyId:        uuid.NewV4().String(),
+	}
+	_, err = cryptoClient.GenerateKeyPair(context.Background(), generateECDSAKeypairRequest)
+	if err != nil {
+		panic(fmt.Errorf("Generate ECDSA Key Pair Error: %s", err))
+	}
+	fmt.Println("Generated ECDSA key pairs successfully")
 
 	//WrapKey and UnWrapKey examples
 	desKeyTemplate := util.NewAttributeMap(
@@ -323,6 +337,22 @@ func exampleStreamingCipher(conn *grpc.ClientConn) {
 	}
 	fmt.Printf("Unwrap DES3 key successfully with checksum %v\n", unWrapedResponse.CheckSum[:3])
 
+	//Mechanism management
+	mechanismListRequest := &pb.GetMechanismListRequest{}
+	mechanismListResponse, err := cryptoClient.GetMechanismList(context.Background(), mechanismListRequest)
+	if err != nil {
+		panic(fmt.Errorf("Get mechanism list error: %s", err))
+	}
+	fmt.Printf("Get mechanism list successfully:\n%v ...\n", mechanismListResponse.Mechs[:8])
+
+	mechanismInfoRequest := &pb.GetMechanismInfoRequest{
+		Mech: ep11.CKM_RSA_PKCS,
+	}
+	mechanismInfoResponse, err := cryptoClient.GetMechanismInfo(context.Background(), mechanismInfoRequest)
+	if err != nil {
+		panic(fmt.Errorf("Get mechanism info error: %s", err))
+	}
+	fmt.Printf("Get CKM_RSA_PKCS mechanism info successfully: %v\n", mechanismInfoResponse.MechInfo)
 }
 
 const (
