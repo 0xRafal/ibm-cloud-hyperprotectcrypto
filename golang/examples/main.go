@@ -190,6 +190,89 @@ func exampleStreamingCipher(conn *grpc.ClientConn) {
 	} else {
 		fmt.Printf("Digest data using multiple operations: %x\n", digestFinalResponse.Digest)
 	}
+
+	var modulusBits int64
+	modulusBits = 2048
+	subject := []byte("subject")
+	id := []byte("id")
+	publicExponent := []byte{0x11}
+
+	publicKeyTemplate := util.NewAttributeMap(
+		//util.NewAttribute(ep11.CKA_VALUE_LEN, (uint64)(keyLen/8)),
+		util.NewAttribute(ep11.CKA_ENCRYPT, true),
+		util.NewAttribute(ep11.CKA_VERIFY, true),
+		util.NewAttribute(ep11.CKA_WRAP, true),
+		util.NewAttribute(ep11.CKA_MODULUS_BITS, modulusBits),
+		util.NewAttribute(ep11.CKA_PUBLIC_EXPONENT, publicExponent),
+		//util.NewAttribute(ep11.CKA_PUBLIC_EXPONENT, uint64(0x101)), works, same as test case
+
+		util.NewAttribute(ep11.CKA_EXTRACTABLE, false), // set to false!
+	)
+	privateKeyTemplate := util.NewAttributeMap(
+		//util.NewAttribute(ep11.CKA_VALUE_LEN, (uint64)(keyLen/8)),
+		util.NewAttribute(ep11.CKA_PRIVATE, true),
+		util.NewAttribute(ep11.CKA_SUBJECT, subject),
+		util.NewAttribute(ep11.CKA_ID, id),
+		util.NewAttribute(ep11.CKA_SENSITIVE, true),
+		util.NewAttribute(ep11.CKA_DECRYPT, true),
+		util.NewAttribute(ep11.CKA_SIGN, true),
+		util.NewAttribute(ep11.CKA_UNWRAP, true),
+
+		util.NewAttribute(ep11.CKA_EXTRACTABLE, false), // set to false!
+	)
+	generateKeypairRequest := &pb.GenerateKeyPairRequest{
+		Mech:            &pb.Mechanism{Mechanism: ep11.CKM_RSA_PKCS_KEY_PAIR_GEN},
+		PubKeyTemplate:  publicKeyTemplate,
+		PrivKeyTemplate: privateKeyTemplate,
+		PrivKeyId:       uuid.NewV4().String(),
+		PubKeyId:        uuid.NewV4().String(),
+	}
+
+	generateKeyPairStatus, err := cryptoClient.GenerateKeyPair(context.Background(), generateKeypairRequest)
+	if err != nil {
+		panic(fmt.Errorf("GenerateKeyPair Error: %s", err))
+	}
+	fmt.Println("Generated PKCS Key pairs")
+	signInitRequest := &pb.SignInitRequest{
+		Mech:    &pb.Mechanism{Mechanism: ep11.CKM_SHA1_RSA_PKCS},
+		PrivKey: generateKeyPairStatus.PrivKey,
+	}
+	signInitResponse, err := cryptoClient.SignInit(context.Background(), signInitRequest)
+	if err != nil {
+		panic(fmt.Errorf("SignInit Error: %s", err))
+	}
+	fmt.Println("SignInit successful")
+
+	signData := []byte("These data need to be signed")
+	signRequest := &pb.SignRequest{
+		State: signInitResponse.State,
+		Data:  signData,
+	}
+	SignResponse, err := cryptoClient.Sign(context.Background(), signRequest)
+	if err != nil {
+		panic(fmt.Errorf("Sign Error: %s", err))
+	}
+	fmt.Println("Data signed")
+
+	verifyInitRequest := &pb.VerifyInitRequest{
+		Mech:   &pb.Mechanism{Mechanism: ep11.CKM_SHA1_RSA_PKCS},
+		PubKey: generateKeyPairStatus.PubKey,
+	}
+	verifyInitResponse, err := cryptoClient.VerifyInit(context.Background(), verifyInitRequest)
+	if err != nil {
+		panic(fmt.Errorf("VerifyInit Error: %s", err))
+	}
+	fmt.Println("VerifyInit successful")
+	verifyRequest := &pb.VerifyRequest{
+		State:     verifyInitResponse.State,
+		Data:      signData,
+		Signature: SignResponse.Signature,
+	}
+	_, err = cryptoClient.Verify(context.Background(), verifyRequest)
+	if err != nil {
+		panic(fmt.Errorf("Verify Error: %s", err))
+	}
+	fmt.Println("Verify successful")
 }
 
 const (
