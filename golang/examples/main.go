@@ -34,7 +34,7 @@ func exampleStreamingCipher(conn *grpc.ClientConn) {
 
 	generateKeyStatus, err := cryptoClient.GenerateKey(context.Background(), keygenmsg)
 	if err != nil {
-		panic(fmt.Errorf("GenerateKey Error: %s\n", err))
+		panic(fmt.Errorf("GenerateKey Error: %s", err))
 	}
 	fmt.Println("Generated AES Key")
 
@@ -43,10 +43,10 @@ func exampleStreamingCipher(conn *grpc.ClientConn) {
 	}
 	rng, err := cryptoClient.GenerateRandom(context.Background(), rngTemplate)
 	if err != nil {
-		panic(fmt.Errorf("GenerateRandom Error: %s\n", err))
+		panic(fmt.Errorf("GenerateRandom Error: %s", err))
 	}
 	iv := rng.Rnd[:ep11.AES_BLOCK_SIZE]
-	fmt.Println("Generated IV %v", rng.Rnd)
+	fmt.Println("Generated IV succefully")
 
 	encipherInitInfo := &pb.EncryptInitRequest{
 		Mech: &pb.Mechanism{Mechanism: ep11.CKM_AES_CBC_PAD, Parameter: iv},
@@ -241,7 +241,7 @@ func exampleStreamingCipher(conn *grpc.ClientConn) {
 	if err != nil {
 		panic(fmt.Errorf("SignInit Error: %s", err))
 	}
-	fmt.Println("SignInit successful")
+	fmt.Println("SignInit successfully")
 
 	signData := []byte("These data need to be signed")
 	signRequest := &pb.SignRequest{
@@ -262,7 +262,7 @@ func exampleStreamingCipher(conn *grpc.ClientConn) {
 	if err != nil {
 		panic(fmt.Errorf("VerifyInit Error: %s", err))
 	}
-	fmt.Println("VerifyInit successful")
+	fmt.Println("VerifyInit successfully")
 	verifyRequest := &pb.VerifyRequest{
 		State:     verifyInitResponse.State,
 		Data:      signData,
@@ -272,7 +272,57 @@ func exampleStreamingCipher(conn *grpc.ClientConn) {
 	if err != nil {
 		panic(fmt.Errorf("Verify Error: %s", err))
 	}
-	fmt.Println("Verify successful")
+	fmt.Println("Verify successfully")
+
+	//WrapKey and UnWrapKey examples
+	desKeyTemplate := util.NewAttributeMap(
+		util.NewAttribute(ep11.CKA_VALUE_LEN, (uint64)(128/8)),
+		util.NewAttribute(ep11.CKA_ENCRYPT, true),
+		util.NewAttribute(ep11.CKA_DECRYPT, true),
+		util.NewAttribute(ep11.CKA_EXTRACTABLE, true), // must be true to be wrapped
+	)
+	generateKeyRequest := &pb.GenerateKeyRequest{
+		Mech:     &pb.Mechanism{Mechanism: ep11.CKM_DES3_KEY_GEN},
+		Template: desKeyTemplate,
+		KeyId:    uuid.NewV4().String(), //optional
+	}
+	generateNewKeyStatus, err := cryptoClient.GenerateKey(context.Background(), generateKeyRequest)
+	if err != nil {
+		panic(fmt.Errorf("Generate DES3 Key Error: %s", err))
+	}
+	fmt.Printf("Generated DES3 key with checksum %v\n", generateNewKeyStatus.CheckSum[:3])
+
+	wrapKeyRequest := &pb.WrapKeyRequest{
+		Mech: &pb.Mechanism{Mechanism: ep11.CKM_RSA_PKCS},
+		KeK:  generateKeyPairStatus.PubKey,
+		Key:  generateNewKeyStatus.Key,
+	}
+	wrapKeyResponse, err := cryptoClient.WrapKey(context.Background(), wrapKeyRequest)
+	if err != nil {
+		panic(fmt.Errorf("Wrap DES3 key error: %s", err))
+	}
+	fmt.Println("Wrap DES3 key successfully")
+
+	desUnwrapKeyTemplate := util.NewAttributeMap(
+		util.NewAttribute(ep11.CKA_CLASS, ep11.CKO_SECRET_KEY),
+		util.NewAttribute(ep11.CKA_KEY_TYPE, ep11.CKK_DES3),
+		util.NewAttribute(ep11.CKA_VALUE_LEN, (uint64)(128/8)),
+		util.NewAttribute(ep11.CKA_ENCRYPT, true),
+		util.NewAttribute(ep11.CKA_DECRYPT, true),
+		util.NewAttribute(ep11.CKA_EXTRACTABLE, true), // must be true to be wrapped
+	)
+	unwrapRequest := &pb.UnwrapKeyRequest{
+		Mech:     &pb.Mechanism{Mechanism: ep11.CKM_RSA_PKCS},
+		KeK:      generateKeyPairStatus.PrivKey,
+		Wrapped:  wrapKeyResponse.Wrapped,
+		Template: desUnwrapKeyTemplate,
+	}
+	unWrapedResponse, err := cryptoClient.UnwrapKey(context.Background(), unwrapRequest)
+	if err != nil {
+		panic(fmt.Errorf("Unwrap DES3 key error: %s", err))
+	}
+	fmt.Printf("Unwrap DES3 key successfully with checksum %v\n", unWrapedResponse.CheckSum[:3])
+
 }
 
 const (
