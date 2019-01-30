@@ -353,6 +353,70 @@ func exampleStreamingCipher(conn *grpc.ClientConn) {
 		panic(fmt.Errorf("Get mechanism info error: %s", err))
 	}
 	fmt.Printf("Get CKM_RSA_PKCS mechanism info successfully: %v\n", mechanismInfoResponse.MechInfo)
+
+	//DH pkcs Derive key
+
+	//1 Get DH domain parameters
+	dhParameterTemplate := util.NewAttributeMap(
+		util.NewAttribute(ep11.CKA_CLASS, uint64(ep11.CKO_DOMAIN_PARAMETERS)),
+		util.NewAttribute(ep11.CKA_KEY_TYPE, uint64(ep11.CKK_DH)),
+		util.NewAttribute(ep11.CKA_PRIME_BITS, uint64(1024)),
+	)
+	dhParameterRequest := &pb.GenerateKeyRequest{
+		Mech:     &pb.Mechanism{Mechanism: ep11.CKM_DH_PKCS_PARAMETER_GEN},
+		Template: dhParameterTemplate,
+	}
+	//dhParameterResponse, err := cryptoClient.GenerateKey(context.Background(), dhParameterRequest)
+	_, err = cryptoClient.GenerateKey(context.Background(), dhParameterRequest)
+	if err != nil {
+		panic(fmt.Errorf("Generate DH_PKCS Parameters Error: %s", err))
+	}
+	fmt.Println("Generated DH_PKCS parameters successfully")
+
+	//2 Get base and prime attribute
+	//var base, prime [1024]byte
+	//var classv [64]byte
+	publicKeyAttributeTemplate := util.NewAttributeMap(
+		util.NewAttribute(ep11.CKA_CLASS, true),
+	//util.NewAttribute(ep11.CKA_BASE, base),
+	//util.NewAttribute(ep11.CKA_PRIME, prime),
+	)
+	getAttributeRequest := &pb.GetAttributeValueRequest{
+		//Object:     dhParameterResponse.Key,
+		Object:     generateKeyPairStatus.PubKey,
+		Attributes: publicKeyAttributeTemplate,
+	}
+	getAttributeResponse, err := cryptoClient.GetAttributeValue(context.Background(), getAttributeRequest)
+	if err != nil {
+		panic(fmt.Errorf("Get DH_PKCS Attributes Error: %s", err))
+	}
+	fmt.Printf("Get DH_PKCS attributes successfully: %v\n", getAttributeResponse.Attributes)
+	/*
+		//2 generate DH key pairs
+		dhPublicKeyTemplate := util.NewAttributeMap(
+			util.NewAttribute(ep11.CKA_BASE, uint64(65)),
+			util.NewAttribute(ep11.CKA_PRIME, uint64(71)),
+			util.NewAttribute(ep11.CKA_EXTRACTABLE, false),
+		)
+		dhPrivateKeyTemplate := util.NewAttributeMap(
+			util.NewAttribute(ep11.CKA_PRIME_BITS, uint64(1024)),
+			util.NewAttribute(ep11.CKA_PRIVATE, true),
+			util.NewAttribute(ep11.CKA_SENSITIVE, true),
+			util.NewAttribute(ep11.CKA_DERIVE, true),
+			util.NewAttribute(ep11.CKA_EXTRACTABLE, false),
+		)
+		generateDHKeyPairRequest := &pb.GenerateKeyPairRequest{
+			Mech:            &pb.Mechanism{Mechanism: ep11.CKM_DH_PKCS_KEY_PAIR_GEN},
+			PubKeyTemplate:  dhPublicKeyTemplate,
+			PrivKeyTemplate: dhPrivateKeyTemplate,
+		}
+		generateDHKeyPairResponse, err := cryptoClient.GenerateKeyPair(context.Background(), generateDHKeyPairRequest)
+		if err != nil {
+			panic(fmt.Errorf("Generate DH_PKCS Key Pairs Error: %s", err))
+		}
+		fmt.Println("Generated DH_PKCS key pairs successfully")
+	*/
+	return
 }
 
 const (
