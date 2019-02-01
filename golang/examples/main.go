@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/asn1"
+	"encoding/hex"
 	"fmt"
 	"reflect"
 
@@ -262,32 +264,6 @@ func exampleStreamingCipher(conn *grpc.ClientConn) {
 	}
 	fmt.Println("Verify successfully")
 
-	//ECDSA key pair
-	ecParameters := []byte{0x06, 0x08, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07}
-	publicKeyECDSATemplate := util.NewAttributeMap(
-		util.NewAttribute(ep11.CKA_VERIFY, true), //to verify a signature
-		util.NewAttribute(ep11.CKA_EC_PARAMS, ecParameters),
-		util.NewAttribute(ep11.CKA_EXTRACTABLE, false),
-	)
-	privateKeyECDSATemplate := util.NewAttributeMap(
-		util.NewAttribute(ep11.CKA_PRIVATE, true),
-		util.NewAttribute(ep11.CKA_SENSITIVE, true),
-		util.NewAttribute(ep11.CKA_SIGN, true), //to generate signature
-		util.NewAttribute(ep11.CKA_EXTRACTABLE, false),
-	)
-	generateECDSAKeypairRequest := &pb.GenerateKeyPairRequest{
-		Mech:            &pb.Mechanism{Mechanism: ep11.CKM_EC_KEY_PAIR_GEN},
-		PubKeyTemplate:  publicKeyECDSATemplate,
-		PrivKeyTemplate: privateKeyECDSATemplate,
-		PrivKeyId:       uuid.NewV4().String(),
-		PubKeyId:        uuid.NewV4().String(),
-	}
-	_, err = cryptoClient.GenerateKeyPair(context.Background(), generateECDSAKeypairRequest)
-	if err != nil {
-		panic(fmt.Errorf("Generate ECDSA Key Pair Error: %s", err))
-	}
-	fmt.Println("Generated ECDSA key pairs successfully")
-
 	//WrapKey and UnWrapKey examples
 	desKeyTemplate := util.NewAttributeMap(
 		util.NewAttribute(ep11.CKA_VALUE_LEN, (uint64)(128/8)),
@@ -354,68 +330,94 @@ func exampleStreamingCipher(conn *grpc.ClientConn) {
 	}
 	fmt.Printf("Get CKM_RSA_PKCS mechanism info successfully: %v\n", mechanismInfoResponse.MechInfo)
 
-	//DH pkcs Derive key
+	//ECDH  Derive key
 
-	//1 Get DH domain parameters
-	dhParameterTemplate := util.NewAttributeMap(
-		util.NewAttribute(ep11.CKA_CLASS, uint64(ep11.CKO_DOMAIN_PARAMETERS)),
-		util.NewAttribute(ep11.CKA_KEY_TYPE, uint64(ep11.CKK_DH)),
-		util.NewAttribute(ep11.CKA_PRIME_BITS, uint64(1024)),
+	//step 1: generate EC key pair
+	ecParameters := []byte{0x06, 0x08, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07}
+	publicKeyECTemplate := util.NewAttributeMap(
+		util.NewAttribute(ep11.CKA_EC_PARAMS, ecParameters),
+		util.NewAttribute(ep11.CKA_EXTRACTABLE, false),
 	)
-	dhParameterRequest := &pb.GenerateKeyRequest{
-		Mech:     &pb.Mechanism{Mechanism: ep11.CKM_DH_PKCS_PARAMETER_GEN},
-		Template: dhParameterTemplate,
+	privateKeyECTemplate := util.NewAttributeMap(
+		util.NewAttribute(ep11.CKA_DERIVE, true), //to generate signature
+		util.NewAttribute(ep11.CKA_EXTRACTABLE, false),
+	)
+	generateECKeypairRequest := &pb.GenerateKeyPairRequest{
+		Mech:            &pb.Mechanism{Mechanism: ep11.CKM_EC_KEY_PAIR_GEN},
+		PubKeyTemplate:  publicKeyECTemplate,
+		PrivKeyTemplate: privateKeyECTemplate,
+		PrivKeyId:       uuid.NewV4().String(),
+		PubKeyId:        uuid.NewV4().String(),
 	}
-	//dhParameterResponse, err := cryptoClient.GenerateKey(context.Background(), dhParameterRequest)
-	_, err = cryptoClient.GenerateKey(context.Background(), dhParameterRequest)
+	alicECKeypairResponse, err := cryptoClient.GenerateKeyPair(context.Background(), generateECKeypairRequest)
 	if err != nil {
-		panic(fmt.Errorf("Generate DH_PKCS Parameters Error: %s", err))
+		panic(fmt.Errorf("Generate Alice EC Key Pair Error: %s", err))
 	}
-	fmt.Println("Generated DH_PKCS parameters successfully")
+	fmt.Println("Generated Alice EC key pairs successfully")
 
-	//2 Get base and prime attribute
-	//var base, prime [1024]byte
-	//var classv [64]byte
-	publicKeyAttributeTemplate := util.NewAttributeMap(
-		util.NewAttribute(ep11.CKA_CLASS, true),
-	//util.NewAttribute(ep11.CKA_BASE, base),
-	//util.NewAttribute(ep11.CKA_PRIME, prime),
-	)
-	getAttributeRequest := &pb.GetAttributeValueRequest{
-		//Object:     dhParameterResponse.Key,
-		Object:     generateKeyPairStatus.PubKey,
-		Attributes: publicKeyAttributeTemplate,
-	}
-	getAttributeResponse, err := cryptoClient.GetAttributeValue(context.Background(), getAttributeRequest)
+	bobECKeypairResponse, err := cryptoClient.GenerateKeyPair(context.Background(), generateECKeypairRequest)
 	if err != nil {
-		panic(fmt.Errorf("Get DH_PKCS Attributes Error: %s", err))
+		panic(fmt.Errorf("Generate Bob EC Key Pair Error: %s", err))
 	}
-	fmt.Printf("Get DH_PKCS attributes successfully: %v\n", getAttributeResponse.Attributes)
-	/*
-		//2 generate DH key pairs
-		dhPublicKeyTemplate := util.NewAttributeMap(
-			util.NewAttribute(ep11.CKA_BASE, uint64(65)),
-			util.NewAttribute(ep11.CKA_PRIME, uint64(71)),
-			util.NewAttribute(ep11.CKA_EXTRACTABLE, false),
-		)
-		dhPrivateKeyTemplate := util.NewAttributeMap(
-			util.NewAttribute(ep11.CKA_PRIME_BITS, uint64(1024)),
-			util.NewAttribute(ep11.CKA_PRIVATE, true),
-			util.NewAttribute(ep11.CKA_SENSITIVE, true),
-			util.NewAttribute(ep11.CKA_DERIVE, true),
-			util.NewAttribute(ep11.CKA_EXTRACTABLE, false),
-		)
-		generateDHKeyPairRequest := &pb.GenerateKeyPairRequest{
-			Mech:            &pb.Mechanism{Mechanism: ep11.CKM_DH_PKCS_KEY_PAIR_GEN},
-			PubKeyTemplate:  dhPublicKeyTemplate,
-			PrivKeyTemplate: dhPrivateKeyTemplate,
-		}
-		generateDHKeyPairResponse, err := cryptoClient.GenerateKeyPair(context.Background(), generateDHKeyPairRequest)
-		if err != nil {
-			panic(fmt.Errorf("Generate DH_PKCS Key Pairs Error: %s", err))
-		}
-		fmt.Println("Generated DH_PKCS key pairs successfully")
-	*/
+	fmt.Println("Generated Bob EC key pairs successfully")
+
+	//GetAttributeValue
+	attributetemplate := util.NewAttributeMap(
+		util.NewAttribute(ep11.CKA_SIGN, uint8(0)),
+		util.NewAttribute(ep11.CKA_WRAP, uint8(0)),
+	)
+	attributerequest := &pb.GetAttributeValueRequest{
+		Object:     bobECKeypairResponse.PrivKey,
+		Attributes: attributetemplate,
+	}
+	attributeresponse, err := cryptoClient.GetAttributeValue(context.Background(), attributerequest)
+	if err != nil {
+		panic(fmt.Errorf("Get attribute Error: %s", err))
+	}
+	fmt.Println("get attribute successfully")
+	for index, attr := range attributeresponse.Attributes {
+		fmt.Printf("index %v, value %v\n", index, attr)
+	}
+
+	//step 2: derive key for alice
+	type derivekeyParameter struct {
+		KDF        []byte
+		SharedData []byte
+		PublicKey  []byte
+	}
+	deriveKeyPara := derivekeyParameter{}
+	deriveKeyPara.KDF = make([]byte, 4)
+	deriveKeyPara.KDF[3] = 1 //1 is CKD_NULL
+	deriveKeyPara.SharedData = []byte{asn1.TagNull}
+	deriveKeyPara.PublicKey = make([]byte, len(bobECKeypairResponse.PubKey))
+	copy(deriveKeyPara.PublicKey, bobECKeypairResponse.PubKey)
+	encodePara, err := asn1.Marshal(deriveKeyPara)
+	if err != nil {
+		panic(fmt.Errorf("DER Encoding Error: %s", err))
+	}
+	fmt.Println("DER encoding successfully")
+
+	deriveKeyTemplate := util.NewAttributeMap(
+		util.NewAttribute(ep11.CKA_CLASS, uint64(ep11.CKO_SECRET_KEY)),
+		util.NewAttribute(ep11.CKA_KEY_TYPE, uint64(ep11.CKK_DES3)),
+		//util.NewAttribute(ep11.CKA_VALUE_LEN, (uint64)(128/8)),
+		util.NewAttribute(ep11.CKA_ENCRYPT, true),
+		util.NewAttribute(ep11.CKA_DECRYPT, true),
+	)
+	derivekeyRequest := &pb.DeriveKeyRequest{
+		Mech:     &pb.Mechanism{Mechanism: ep11.CKM_ECDH1_DERIVE, Parameter: encodePara},
+		Template: deriveKeyTemplate,
+		BaseKey:  alicECKeypairResponse.PrivKey,
+	}
+	fmt.Printf("DeriveKeyRequest Struct:\n%v\n\n", derivekeyRequest)
+	fmt.Printf("Mechanism Parameter:\n%s\n\n", hex.Dump(encodePara[3:]))
+
+	aliceDerivekeyResponse, err := cryptoClient.DeriveKey(context.Background(), derivekeyRequest)
+	if err != nil {
+		panic(fmt.Errorf("Alice EC Key Derive Error: %s", err))
+	}
+	fmt.Printf("Alice EC key derive successfully %v\n", aliceDerivekeyResponse.NewKey)
+
 	return
 }
 
