@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/asn1"
 	"encoding/hex"
 	"fmt"
@@ -10,11 +11,11 @@ import (
 	pb "github.com/ibm-developer/ibm-cloud-hyperprotectcrypto/golang/grpc"
 	"github.com/ibm-developer/ibm-cloud-hyperprotectcrypto/golang/util"
 	uuid "github.com/satori/go.uuid"
-	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
 
-func exampleStreamingCipher(conn *grpc.ClientConn) {
+//ExampleStreamingCipher shows how to call functions
+func ExampleStreamingCipher(conn *grpc.ClientConn) {
 	cryptoClient := pb.NewCryptoClient(conn)
 
 	keyLen := 128
@@ -381,14 +382,15 @@ func exampleStreamingCipher(conn *grpc.ClientConn) {
 
 	//step 2: derive key for alice
 	type derivekeyParameter struct {
-		KDF        []byte
-		SharedData []byte
-		PublicKey  []byte
+		//KDF        []byte
+		//SharedData []byte
+		PublicKey []byte
 	}
 	deriveKeyPara := derivekeyParameter{}
-	deriveKeyPara.KDF = make([]byte, 4)
-	deriveKeyPara.KDF[3] = 1 //1 is CKD_NULL
-	deriveKeyPara.SharedData = []byte{asn1.TagNull}
+	//deriveKeyPara.KDF = make([]byte, 4)
+	//deriveKeyPara.KDF[3] = 1 //1 is CKD_NULL
+	//deriveKeyPara.SharedData = []byte{asn1.TagNull} //encoded to 04 01 05
+	//deriveKeyPara.SharedData = nil //encoded to 04 00
 	deriveKeyPara.PublicKey = make([]byte, len(bobECKeypairResponse.PubKey))
 	copy(deriveKeyPara.PublicKey, bobECKeypairResponse.PubKey)
 	encodePara, err := asn1.Marshal(deriveKeyPara)
@@ -399,13 +401,14 @@ func exampleStreamingCipher(conn *grpc.ClientConn) {
 
 	deriveKeyTemplate := util.NewAttributeMap(
 		util.NewAttribute(ep11.CKA_CLASS, uint64(ep11.CKO_SECRET_KEY)),
-		util.NewAttribute(ep11.CKA_KEY_TYPE, uint64(ep11.CKK_DES3)),
-		//util.NewAttribute(ep11.CKA_VALUE_LEN, (uint64)(128/8)),
+		util.NewAttribute(ep11.CKA_KEY_TYPE, uint64(ep11.CKK_AES)),
+		util.NewAttribute(ep11.CKA_VALUE_LEN, (uint64)(128/8)),
 		util.NewAttribute(ep11.CKA_ENCRYPT, true),
 		util.NewAttribute(ep11.CKA_DECRYPT, true),
 	)
 	derivekeyRequest := &pb.DeriveKeyRequest{
-		Mech:     &pb.Mechanism{Mechanism: ep11.CKM_ECDH1_DERIVE, Parameter: encodePara},
+		Mech: &pb.Mechanism{Mechanism: ep11.CKM_ECDH1_DERIVE, Parameter: encodePara[3:]},
+		//Mech:     &pb.Mechanism{Mechanism: ep11.CKM_ECDH1_DERIVE, Parameter: bobECKeypairResponse.PubKey},
 		Template: deriveKeyTemplate,
 		BaseKey:  alicECKeypairResponse.PrivKey,
 	}
@@ -433,5 +436,5 @@ func main() {
 	}
 	defer conn.Close()
 
-	exampleStreamingCipher(conn)
+	ExampleStreamingCipher(conn)
 }
