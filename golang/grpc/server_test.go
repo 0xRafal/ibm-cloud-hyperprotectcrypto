@@ -1,8 +1,8 @@
-package main
+// grep11_test provides grep11 function call examples
+package grep11_test
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"reflect"
 
@@ -17,7 +17,8 @@ const (
 	address = "zlxcn002.torolab.ibm.com:9876"
 )
 
-func getMechnismInfo() {
+// Example_getMechnismInfo gets mechnism list and retrieve detail information for CKM_RSA_PKCS
+func Example_getMechnismInfo() {
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
 		panic(fmt.Errorf("did not connect: %v", err))
@@ -47,7 +48,8 @@ func getMechnismInfo() {
 	// Get CKM_RSA_PKCS mechanism info successfully: MinKeySize:512 MaxKeySize:4096 Flags:404224
 }
 
-func encryptAndecrypt() {
+//Example_encryptAndecrypt encrypt and decrypt a piece of text.
+func Example_encryptAndecrypt() {
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
 		panic(fmt.Errorf("did not connect: %v", err))
@@ -182,7 +184,8 @@ func encryptAndecrypt() {
 	// Hello, this is a very long and creative message without any imagination
 }
 
-func digest() {
+// Example_digest calculate digest on a piece of text
+func Example_digest() {
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
 		panic(fmt.Errorf("did not connect: %v", err))
@@ -245,7 +248,8 @@ func digest() {
 	// Digest data using multiple operations: 294f19f8adf4d0276a51f56bd91dc2638e76524a
 }
 
-func signAndVerifyUsingRSAKeyPair() {
+// Example_signAndVerifyUsingRSAKeyPair sign on a piece of data and verify it
+func Example_signAndVerifyUsingRSAKeyPair() {
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
 		panic(fmt.Errorf("did not connect: %v", err))
@@ -328,7 +332,8 @@ func signAndVerifyUsingRSAKeyPair() {
 	// Verify successfully
 }
 
-func wrapAndUnWrapKey() {
+//Example_wrapAndUnWrapKey wraps a DES3 key with RSA public key and unwrap it with private key
+func Example_wrapAndUnWrapKey() {
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
 		panic(fmt.Errorf("did not connect: %v", err))
@@ -420,95 +425,4 @@ func wrapAndUnWrapKey() {
 	// Generated PKCS key pairs successfully
 	// Wrap DES3 key successfully
 	// Unwrap DES3 key successfully with checksum [...]
-}
-
-//ECDH Derive key and attribute. this function is not done yet
-func deriveKey() {
-	conn, err := grpc.Dial(address, grpc.WithInsecure())
-	if err != nil {
-		panic(fmt.Errorf("did not connect: %v", err))
-	}
-	defer conn.Close()
-
-	cryptoClient := pb.NewCryptoClient(conn)
-
-	//Generate ECDH key pairs
-	ecParameters := []byte{0x06, 0x08, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07}
-	publicKeyECTemplate := util.NewAttributeMap(
-		util.NewAttribute(ep11.CKA_EC_PARAMS, ecParameters),
-		util.NewAttribute(ep11.CKA_EXTRACTABLE, false),
-	)
-	privateKeyECTemplate := util.NewAttributeMap(
-		util.NewAttribute(ep11.CKA_DERIVE, true),
-		util.NewAttribute(ep11.CKA_EXTRACTABLE, false),
-	)
-	generateECKeypairRequest := &pb.GenerateKeyPairRequest{
-		Mech:            &pb.Mechanism{Mechanism: ep11.CKM_EC_KEY_PAIR_GEN},
-		PubKeyTemplate:  publicKeyECTemplate,
-		PrivKeyTemplate: privateKeyECTemplate,
-		PrivKeyId:       uuid.NewV4().String(),
-		PubKeyId:        uuid.NewV4().String(),
-	}
-	alicECKeypairResponse, err := cryptoClient.GenerateKeyPair(context.Background(), generateECKeypairRequest)
-	if err != nil {
-		panic(fmt.Errorf("Generate Alice EC Key Pair Error: %s", err))
-	}
-	fmt.Println("Generated Alice EC key pairs successfully")
-
-	bobECKeypairResponse, err := cryptoClient.GenerateKeyPair(context.Background(), generateECKeypairRequest)
-	if err != nil {
-		panic(fmt.Errorf("Generate Bob EC Key Pair Error: %s", err))
-	}
-	fmt.Println("Generated Bob EC key pairs successfully")
-
-	//GetAttributeValue for private key
-	attributetemplate := util.NewAttributeMap(
-		util.NewAttribute(ep11.CKA_SIGN, uint8(0)),
-		util.NewAttribute(ep11.CKA_WRAP, uint8(0)),
-	)
-	attributerequest := &pb.GetAttributeValueRequest{
-		Object:     bobECKeypairResponse.PrivKey,
-		Attributes: attributetemplate,
-	}
-	attributeresponse, err := cryptoClient.GetAttributeValue(context.Background(), attributerequest)
-	if err != nil {
-		panic(fmt.Errorf("Get attribute Error: %s", err))
-	}
-	for index, attr := range attributeresponse.Attributes {
-		fmt.Printf("index %v, value %v\n", index, attr)
-	}
-
-	//Derive AES key for alice
-	deriveKeyTemplate := util.NewAttributeMap(
-		util.NewAttribute(ep11.CKA_CLASS, uint64(ep11.CKO_SECRET_KEY)),
-		util.NewAttribute(ep11.CKA_KEY_TYPE, uint64(ep11.CKK_AES)),
-		util.NewAttribute(ep11.CKA_VALUE_LEN, (uint64)(128/8)),
-		util.NewAttribute(ep11.CKA_ENCRYPT, true),
-		util.NewAttribute(ep11.CKA_DECRYPT, true),
-	)
-	derivekeyRequest := &pb.DeriveKeyRequest{
-		Mech: &pb.Mechanism{Mechanism: ep11.CKM_ECDH1_DERIVE, Parameter: bobECKeypairResponse.PubKey},
-		//pubkey cannot be used here, instead, the Y cordinator bit string shall be used as parameter
-		Template: deriveKeyTemplate,
-		BaseKey:  alicECKeypairResponse.PrivKey,
-	}
-	//for debugging purpose
-	fmt.Printf("DeriveKeyRequest Struct:\n%v\n\n", derivekeyRequest)
-	fmt.Printf("Mechanism Parameter2:\n%s\n\n", hex.Dump(bobECKeypairResponse.PubKey))
-
-	aliceDerivekeyResponse, err := cryptoClient.DeriveKey(context.Background(), derivekeyRequest)
-	if err != nil {
-		panic(fmt.Errorf("Alice EC Key Derive Error: %s", err))
-	}
-	fmt.Printf("Alice EC key derive successfully %v\n", aliceDerivekeyResponse.NewKey)
-
-	return
-}
-
-func main() {
-	getMechnismInfo()
-	encryptAndecrypt()
-	digest()
-	signAndVerifyUsingRSAKeyPair()
-	wrapAndUnWrapKey()
 }
