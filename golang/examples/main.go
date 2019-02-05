@@ -407,13 +407,14 @@ func ExampleStreamingCipher(conn *grpc.ClientConn) {
 		util.NewAttribute(ep11.CKA_DECRYPT, true),
 	)
 	derivekeyRequest := &pb.DeriveKeyRequest{
-		Mech: &pb.Mechanism{Mechanism: ep11.CKM_ECDH1_DERIVE, Parameter: encodePara[3:]},
+		Mech: &pb.Mechanism{Mechanism: ep11.CKM_ECDH1_DERIVE, Parameter: bobECKeypairResponse.PubKey},
 		//Mech:     &pb.Mechanism{Mechanism: ep11.CKM_ECDH1_DERIVE, Parameter: bobECKeypairResponse.PubKey},
 		Template: deriveKeyTemplate,
 		BaseKey:  alicECKeypairResponse.PrivKey,
 	}
 	fmt.Printf("DeriveKeyRequest Struct:\n%v\n\n", derivekeyRequest)
 	fmt.Printf("Mechanism Parameter:\n%s\n\n", hex.Dump(encodePara[3:]))
+	fmt.Printf("Mechanism Parameter2:\n%s\n\n", hex.Dump(bobECKeypairResponse.PubKey))
 
 	aliceDerivekeyResponse, err := cryptoClient.DeriveKey(context.Background(), derivekeyRequest)
 	if err != nil {
