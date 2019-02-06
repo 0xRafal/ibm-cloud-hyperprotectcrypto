@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"encoding/hex"
+	"encoding/asn1"
 	"fmt"
 	"reflect"
 
@@ -422,7 +422,29 @@ func wrapAndUnWrapKey() {
 	// Unwrap DES3 key successfully with checksum [...]
 }
 
-//ECDH Derive key and attribute. this function is not done yet
+//algorithmIdentifier is defined in RFC5480, section 2
+type algorithmIdentifier struct {
+	OID  asn1.ObjectIdentifier
+	Para asn1.ObjectIdentifier `asn:"optional"`
+}
+
+//subjectPublicKeyInfo is defined in RFC5480, section 2
+type subjectPublicKeyInfo struct {
+	AlgorithmID algorithmIdentifier
+	Ycodinator  asn1.BitString
+}
+
+//getYByECSPKI extracts Y coordinate from public key in SPKI format
+func getYByECSPKI(spki []byte) []byte {
+	pubKey := new(subjectPublicKeyInfo)
+	_, err := asn1.Unmarshal(spki, pubKey)
+	if err != nil {
+		fmt.Printf("Unmarshal error %v\n", err)
+		return nil
+	}
+	return pubKey.Ycodinator.Bytes
+}
+
 func deriveKey() {
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
@@ -432,7 +454,7 @@ func deriveKey() {
 
 	cryptoClient := pb.NewCryptoClient(conn)
 
-	//Generate ECDH key pairs
+	//Generate ECDH key pairs for Alice and Bob
 	ecParameters := []byte{0x06, 0x08, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07}
 	publicKeyECTemplate := util.NewAttributeMap(
 		util.NewAttribute(ep11.CKA_EC_PARAMS, ecParameters),
@@ -449,36 +471,18 @@ func deriveKey() {
 		PrivKeyId:       uuid.NewV4().String(),
 		PubKeyId:        uuid.NewV4().String(),
 	}
-	alicECKeypairResponse, err := cryptoClient.GenerateKeyPair(context.Background(), generateECKeypairRequest)
+	aliceECKeypairResponse, err := cryptoClient.GenerateKeyPair(context.Background(), generateECKeypairRequest)
 	if err != nil {
 		panic(fmt.Errorf("Generate Alice EC Key Pair Error: %s", err))
 	}
 	fmt.Println("Generated Alice EC key pairs successfully")
-
 	bobECKeypairResponse, err := cryptoClient.GenerateKeyPair(context.Background(), generateECKeypairRequest)
 	if err != nil {
 		panic(fmt.Errorf("Generate Bob EC Key Pair Error: %s", err))
 	}
 	fmt.Println("Generated Bob EC key pairs successfully")
 
-	//GetAttributeValue for private key
-	attributetemplate := util.NewAttributeMap(
-		util.NewAttribute(ep11.CKA_SIGN, uint8(0)),
-		util.NewAttribute(ep11.CKA_WRAP, uint8(0)),
-	)
-	attributerequest := &pb.GetAttributeValueRequest{
-		Object:     bobECKeypairResponse.PrivKey,
-		Attributes: attributetemplate,
-	}
-	attributeresponse, err := cryptoClient.GetAttributeValue(context.Background(), attributerequest)
-	if err != nil {
-		panic(fmt.Errorf("Get attribute Error: %s", err))
-	}
-	for index, attr := range attributeresponse.Attributes {
-		fmt.Printf("index %v, value %v\n", index, attr)
-	}
-
-	//Derive AES key for alice
+	//Derive AES key for Alice
 	deriveKeyTemplate := util.NewAttributeMap(
 		util.NewAttribute(ep11.CKA_CLASS, uint64(ep11.CKO_SECRET_KEY)),
 		util.NewAttribute(ep11.CKA_KEY_TYPE, uint64(ep11.CKK_AES)),
@@ -486,23 +490,38 @@ func deriveKey() {
 		util.NewAttribute(ep11.CKA_ENCRYPT, true),
 		util.NewAttribute(ep11.CKA_DECRYPT, true),
 	)
-	derivekeyRequest := &pb.DeriveKeyRequest{
-		Mech: &pb.Mechanism{Mechanism: ep11.CKM_ECDH1_DERIVE, Parameter: bobECKeypairResponse.PubKey},
+	aliceDerivekeyRequest := &pb.DeriveKeyRequest{
+		Mech: &pb.Mechanism{Mechanism: ep11.CKM_ECDH1_DERIVE, Parameter: getYByECSPKI(bobECKeypairResponse.PubKey)},
 		//pubkey cannot be used here, instead, the Y cordinator bit string shall be used as parameter
 		Template: deriveKeyTemplate,
-		BaseKey:  alicECKeypairResponse.PrivKey,
+		BaseKey:  aliceECKeypairResponse.PrivKey,
 	}
-	//for debugging purpose
-	fmt.Printf("DeriveKeyRequest Struct:\n%v\n\n", derivekeyRequest)
-	fmt.Printf("Mechanism Parameter2:\n%s\n\n", hex.Dump(bobECKeypairResponse.PubKey))
-
-	aliceDerivekeyResponse, err := cryptoClient.DeriveKey(context.Background(), derivekeyRequest)
+	aliceDerivekeyResponse, err := cryptoClient.DeriveKey(context.Background(), aliceDerivekeyRequest)
 	if err != nil {
 		panic(fmt.Errorf("Alice EC Key Derive Error: %s", err))
 	}
-	fmt.Printf("Alice EC key derive successfully %v\n", aliceDerivekeyResponse.NewKey)
+	fmt.Printf("Alice AES key derive successfully with checksum %v\n", aliceDerivekeyResponse.CheckSum)
+
+	//Derive AES key for Bob
+	bobDerivekeyRequest := &pb.DeriveKeyRequest{
+		Mech: &pb.Mechanism{Mechanism: ep11.CKM_ECDH1_DERIVE, Parameter: getYByECSPKI(aliceECKeypairResponse.PubKey)},
+		//pubkey cannot be used here, instead, the Y cordinator bit string shall be used as parameter
+		Template: deriveKeyTemplate,
+		BaseKey:  bobECKeypairResponse.PrivKey,
+	}
+	bobDerivekeyResponse, err := cryptoClient.DeriveKey(context.Background(), bobDerivekeyRequest)
+	if err != nil {
+		panic(fmt.Errorf("Bob EC Key Derive Error: %s", err))
+	}
+	fmt.Printf("Bob AES key derive successfully with checksum %v\n", bobDerivekeyResponse.CheckSum)
 
 	return
+
+	// Output:
+	// Generated Alice EC key pairs successfully
+	// Generated Bob EC key pairs successfully
+	// Alice EC key derive successfully with checksum [...]
+	// Bob EC key derive successfully with checksum [...]
 }
 
 func main() {
@@ -511,4 +530,5 @@ func main() {
 	digest()
 	signAndVerifyUsingRSAKeyPair()
 	wrapAndUnWrapKey()
+	deriveKey()
 }
