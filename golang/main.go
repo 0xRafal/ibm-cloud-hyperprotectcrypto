@@ -328,7 +328,7 @@ func signAndVerifyUsingRSAKeyPair() {
 	// Verify successfully
 }
 
-func wrapAndUnWrapKey() {
+func wrapAndUnwrapKey() {
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
 		panic(fmt.Errorf("did not connect: %v", err))
@@ -500,7 +500,7 @@ func deriveKey() {
 	if err != nil {
 		panic(fmt.Errorf("Alice EC Key Derive Error: %s", err))
 	}
-	fmt.Printf("Alice AES key derive successfully with checksum %v\n", aliceDerivekeyResponse.CheckSum)
+	fmt.Printf("Alice AES key derives successfully with checksum %v\n", aliceDerivekeyResponse.CheckSum)
 
 	//Derive AES key for Bob
 	bobDerivekeyRequest := &pb.DeriveKeyRequest{
@@ -513,7 +513,7 @@ func deriveKey() {
 	if err != nil {
 		panic(fmt.Errorf("Bob EC Key Derive Error: %s", err))
 	}
-	fmt.Printf("Bob AES key derive successfully with checksum %v\n", bobDerivekeyResponse.CheckSum)
+	fmt.Printf("Bob AES key derives successfully with checksum %v\n", bobDerivekeyResponse.CheckSum)
 
 	return
 
@@ -529,6 +529,6 @@ func main() {
 	encryptAndecrypt()
 	digest()
 	signAndVerifyUsingRSAKeyPair()
-	wrapAndUnWrapKey()
+	wrapAndUnwrapKey()
 	deriveKey()
 }

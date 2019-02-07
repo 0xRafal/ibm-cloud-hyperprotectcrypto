@@ -1,4 +1,3 @@
-// grep11_test provides grep11 function call examples
 package examples
 
 import (
@@ -334,7 +333,7 @@ func Example_signAndVerifyUsingRSAKeyPair() {
 }
 
 //Example_wrapAndUnWrapKey wraps a DES3 key with RSA public key and unwrap it with private key
-func Example_wrapAndUnWrapKey() {
+func Example_wrapAndUnwrapKey() {
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
 		panic(fmt.Errorf("did not connect: %v", err))
@@ -507,7 +506,7 @@ func Example_deriveKey() {
 	if err != nil {
 		panic(fmt.Errorf("Alice EC Key Derive Error: %s", err))
 	}
-	fmt.Printf("Alice AES key derive successfully with checksum %v\n", aliceDerivekeyResponse.CheckSum)
+	fmt.Printf("Alice AES key derives successfully with checksum %v\n", aliceDerivekeyResponse.CheckSum)
 
 	//Derive AES key for Bob
 	bobDerivekeyRequest := &pb.DeriveKeyRequest{
@@ -520,13 +519,13 @@ func Example_deriveKey() {
 	if err != nil {
 		panic(fmt.Errorf("Bob EC Key Derive Error: %s", err))
 	}
-	fmt.Printf("Bob AES key derive successfully with checksum %v\n", bobDerivekeyResponse.CheckSum)
+	fmt.Printf("Bob AES key derives successfully with checksum %v\n", bobDerivekeyResponse.CheckSum)
 
 	return
 
 	// Output:
 	// Generated Alice EC key pairs successfully
 	// Generated Bob EC key pairs successfully
-	// Alice EC key derive successfully with checksum [...]
-	// Bob EC key derive successfully with checksum [...]
+	// Alice EC key derives successfully with checksum [...]
+	// Bob EC key derives successfully with checksum [...]
 }
