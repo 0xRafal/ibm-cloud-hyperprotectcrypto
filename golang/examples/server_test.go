@@ -1,5 +1,5 @@
 // grep11_test provides grep11 function call examples
-package grep11_test
+package examples
 
 import (
 	"context"
