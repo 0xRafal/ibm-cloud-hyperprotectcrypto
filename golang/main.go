@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	address = "zlxcn002.torolab.ibm.com:9876"
+	address = "localhost:9876"
 )
 
 func getMechnismInfo() {
@@ -46,8 +46,8 @@ func getMechnismInfo() {
 	// Got mechanism list:
 	// [CKM_RSA_PKCS CKM_RSA_PKCS_KEY_PAIR_GEN CKM_RSA_X9_31_KEY_PAIR_GEN CKM_RSA_PKCS_PSS CKM_SHA1_RSA_X9_31] ...
 	// Got CKM_RSA_PKCS mechanism info: MinKeySize:512 MaxKeySize:4096 Flags:404224
-}
 
+}
 func encryptAndecrypt() {
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
