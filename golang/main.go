@@ -31,7 +31,7 @@ func getMechnismInfo() {
 	if err != nil {
 		panic(fmt.Errorf("Get mechanism list error: %s", err))
 	}
-	fmt.Printf("Get mechanism list successfully:\n%v ...\n", mechanismListResponse.Mechs[:8])
+	fmt.Printf("Got mechanism list:\n%v ...\n", mechanismListResponse.Mechs[:5])
 
 	mechanismInfoRequest := &pb.GetMechanismInfoRequest{
 		Mech: ep11.CKM_RSA_PKCS,
@@ -40,11 +40,12 @@ func getMechnismInfo() {
 	if err != nil {
 		panic(fmt.Errorf("Get mechanism info error: %s", err))
 	}
-	fmt.Printf("Get CKM_RSA_PKCS mechanism info successfully: %v\n", mechanismInfoResponse.MechInfo)
+	fmt.Printf("Got CKM_RSA_PKCS mechanism info: %v\n", mechanismInfoResponse.MechInfo)
 
 	// Output:
-	// [ CKM_RSA_PKCS CKM_RSA_PKCS_KEY_PAIR_GEN CKM_RSA_X9_31_KEY_PAIR_GEN CKM_RSA_PKCS_PSS CKM_SHA1_RSA_X9_31 CKM_SHA1_RSA_PKCS CKM_SHA1_RSA_PKCS_PSS CKM_SHA256_RSA_PKCS] ...
-	// Get CKM_RSA_PKCS mechanism info successfully: MinKeySize:512 MaxKeySize:4096 Flags:404224
+	// Got mechanism list:
+	// [CKM_RSA_PKCS CKM_RSA_PKCS_KEY_PAIR_GEN CKM_RSA_X9_31_KEY_PAIR_GEN CKM_RSA_PKCS_PSS CKM_SHA1_RSA_X9_31] ...
+	// Got CKM_RSA_PKCS mechanism info: MinKeySize:512 MaxKeySize:4096 Flags:404224
 }
 
 func encryptAndecrypt() {
@@ -86,7 +87,7 @@ func encryptAndecrypt() {
 		panic(fmt.Errorf("GenerateRandom Error: %s", err))
 	}
 	iv := rng.Rnd[:ep11.AES_BLOCK_SIZE]
-	fmt.Println("Generated IV succefully")
+	fmt.Println("Generated IV")
 
 	encipherInitInfo := &pb.EncryptInitRequest{
 		Mech: &pb.Mechanism{Mechanism: ep11.CKM_AES_CBC_PAD, Parameter: iv},
@@ -281,7 +282,7 @@ func signAndVerifyUsingRSAKeyPair() {
 	if err != nil {
 		panic(fmt.Errorf("GenerateKeyPair Error: %s", err))
 	}
-	fmt.Println("Generated RSA PKCS key pairs successfully")
+	fmt.Println("Generated RSA PKCS key pairs")
 
 	//Sign data
 	signInitRequest := &pb.SignInitRequest{
@@ -320,12 +321,12 @@ func signAndVerifyUsingRSAKeyPair() {
 	if err != nil {
 		panic(fmt.Errorf("Verify Error: %s", err))
 	}
-	fmt.Println("Verify successfully")
+	fmt.Println("Verified")
 
 	// Output:
-	// Generated RSA PKCS key pairs successfully
+	// Generated RSA PKCS key pairs
 	// Data signed
-	// Verify successfully
+	// Verified
 }
 
 func wrapAndUnwrapKey() {
@@ -382,7 +383,7 @@ func wrapAndUnwrapKey() {
 	if err != nil {
 		panic(fmt.Errorf("GenerateKeyPair Error: %s", err))
 	}
-	fmt.Println("Generated PKCS key pairs successfully")
+	fmt.Println("Generated PKCS key pairs")
 
 	wrapKeyRequest := &pb.WrapKeyRequest{
 		Mech: &pb.Mechanism{Mechanism: ep11.CKM_RSA_PKCS},
@@ -393,7 +394,7 @@ func wrapAndUnwrapKey() {
 	if err != nil {
 		panic(fmt.Errorf("Wrap DES3 key error: %s", err))
 	}
-	fmt.Println("Wrap DES3 key successfully")
+	fmt.Println("Wraped DES3 key")
 
 	desUnwrapKeyTemplate := util.NewAttributeMap(
 		util.NewAttribute(ep11.CKA_CLASS, ep11.CKO_SECRET_KEY),
@@ -413,13 +414,13 @@ func wrapAndUnwrapKey() {
 	if err != nil {
 		panic(fmt.Errorf("Unwrap DES3 key error: %s", err))
 	}
-	fmt.Printf("Unwrap DES3 key successfully with checksum %v\n", unWrapedResponse.CheckSum[:3])
+	fmt.Printf("Unwraped DES3 key with checksum %v\n", unWrapedResponse.CheckSum[:3])
 
 	// Output:
 	// Generated DES3 key with checksum [...]
-	// Generated PKCS key pairs successfully
-	// Wrap DES3 key successfully
-	// Unwrap DES3 key successfully with checksum [...]
+	// Generated PKCS key pairs
+	// Wraped DES3 key
+	// Unwraped DES3 key with checksum [...]
 }
 
 //algorithmIdentifier is defined in RFC5480, section 2
@@ -475,12 +476,12 @@ func deriveKey() {
 	if err != nil {
 		panic(fmt.Errorf("Generate Alice EC Key Pair Error: %s", err))
 	}
-	fmt.Println("Generated Alice EC key pairs successfully")
+	fmt.Println("Generated Alice EC key pairs")
 	bobECKeypairResponse, err := cryptoClient.GenerateKeyPair(context.Background(), generateECKeypairRequest)
 	if err != nil {
 		panic(fmt.Errorf("Generate Bob EC Key Pair Error: %s", err))
 	}
-	fmt.Println("Generated Bob EC key pairs successfully")
+	fmt.Println("Generated Bob EC key pairs")
 
 	//Derive AES key for Alice
 	deriveKeyTemplate := util.NewAttributeMap(
@@ -500,7 +501,7 @@ func deriveKey() {
 	if err != nil {
 		panic(fmt.Errorf("Alice EC Key Derive Error: %s", err))
 	}
-	fmt.Printf("Alice AES key derives successfully with checksum %v\n", aliceDerivekeyResponse.CheckSum)
+	fmt.Printf("Alice AES key derives with checksum %v\n", aliceDerivekeyResponse.CheckSum)
 
 	//Derive AES key for Bob
 	bobDerivekeyRequest := &pb.DeriveKeyRequest{
@@ -513,15 +514,15 @@ func deriveKey() {
 	if err != nil {
 		panic(fmt.Errorf("Bob EC Key Derive Error: %s", err))
 	}
-	fmt.Printf("Bob AES key derives successfully with checksum %v\n", bobDerivekeyResponse.CheckSum)
+	fmt.Printf("Bob AES key derives with checksum %v\n", bobDerivekeyResponse.CheckSum)
 
 	return
 
 	// Output:
-	// Generated Alice EC key pairs successfully
-	// Generated Bob EC key pairs successfully
-	// Alice EC key derive successfully with checksum [...]
-	// Bob EC key derive successfully with checksum [...]
+	// Generated Alice EC key pairs
+	// Generated Bob EC key pairs
+	// Alice EC key derives with checksum [...]
+	// Bob EC key derives with checksum [...]
 }
 
 func main() {
