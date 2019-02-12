@@ -1,8 +1,13 @@
 package examples
 
 import (
+	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/sha256"
 	"encoding/asn1"
+	"encoding/hex"
 	"fmt"
 	"reflect"
 
@@ -14,7 +19,7 @@ import (
 )
 
 const (
-	address = "localhost:9876"
+	address = "zlxcn002.torolab.ibm.com:29876"
 )
 
 // Example_getMechnismInfo gets mechnism list and retrieve detail information for CKM_RSA_PKCS
@@ -358,8 +363,9 @@ func Example_wrapAndUnwrapKey() {
 	generateNewKeyStatus, err := cryptoClient.GenerateKey(context.Background(), generateKeyRequest)
 	if err != nil {
 		panic(fmt.Errorf("Generate DES3 Key Error: %s", err))
+	} else {
+		fmt.Println("Generated DES3 key")
 	}
-	fmt.Printf("Generated DES3 key with checksum %v\n", generateNewKeyStatus.CheckSum[:3])
 
 	//Generate RSA key pairs
 	publicExponent := []byte{0x11}
@@ -419,36 +425,81 @@ func Example_wrapAndUnwrapKey() {
 	if err != nil {
 		panic(fmt.Errorf("Unwrap DES3 key error: %s", err))
 	}
-	fmt.Printf("Unwraped DES3 key with checksum %v\n", unWrapedResponse.CheckSum[:3])
+	if !bytes.Equal(generateNewKeyStatus.GetCheckSum()[:3], unWrapedResponse.GetCheckSum()[:3]) {
+		panic(fmt.Errorf("Unwrap DES3 Key Has Different Checksum from Original Key"))
+	} else {
+		fmt.Println("Unwraped DES3 key")
+	}
 
 	// Output:
-	// Generated DES3 key with checksum [...]
+	// Generated DES3 key
 	// Generated PKCS key pairs
 	// Wraped DES3 key
-	// Unwraped DES3 key with checksum [...]
+	// Unwraped DES3 key
 }
 
-//algorithmIdentifier is defined in RFC5480, section 2
-type algorithmIdentifier struct {
-	OID  asn1.ObjectIdentifier
-	Para asn1.ObjectIdentifier `asn:"optional"`
-}
+var (
+	oidNamedCurveP224 = asn1.ObjectIdentifier{1, 3, 132, 0, 33}
+	oidNamedCurveP256 = asn1.ObjectIdentifier{1, 2, 840, 10045, 3, 1, 7}
+	oidNamedCurveP384 = asn1.ObjectIdentifier{1, 3, 132, 0, 34}
+	oidNamedCurveP521 = asn1.ObjectIdentifier{1, 3, 132, 0, 35}
+)
 
-//subjectPublicKeyInfo is defined in RFC5480, section 2
-type subjectPublicKeyInfo struct {
-	AlgorithmID algorithmIdentifier
-	Ycodinator  asn1.BitString
-}
-
-//getYByECSPKI extracts Y coordinate from public key in SPKI format
-func getYByECSPKI(spki []byte) []byte {
-	pubKey := new(subjectPublicKeyInfo)
-	_, err := asn1.Unmarshal(spki, pubKey)
-	if err != nil {
-		fmt.Printf("Unmarshal error %v\n", err)
-		return nil
+func namedCurveFromOID(oid asn1.ObjectIdentifier) elliptic.Curve {
+	switch {
+	case oid.Equal(oidNamedCurveP224):
+		return elliptic.P224()
+	case oid.Equal(oidNamedCurveP256):
+		return elliptic.P256()
+	case oid.Equal(oidNamedCurveP384):
+		return elliptic.P384()
+	case oid.Equal(oidNamedCurveP521):
+		return elliptic.P521()
 	}
-	return pubKey.Ycodinator.Bytes
+	return nil
+}
+
+type EckeyIdentASN struct {
+	KeyType asn1.ObjectIdentifier
+	Curve   asn1.ObjectIdentifier
+}
+
+type PubKeyASN struct {
+	Ident EckeyIdentASN
+	Point asn1.BitString
+}
+
+func blobToPubKey(pubKey []byte, curve asn1.ObjectIdentifier) ([]byte, *ecdsa.PublicKey, error) {
+	nistCurve := namedCurveFromOID(curve)
+	if curve == nil {
+		return nil, nil, fmt.Errorf("could not recognize Curve from OID")
+	}
+
+	decode := &PubKeyASN{}
+	_, err := asn1.Unmarshal(pubKey, decode)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed unmarshalling public key: [%s]", err)
+	}
+
+	hash := sha256.Sum256(decode.Point.Bytes)
+	ski := hash[:]
+
+	x, y := elliptic.Unmarshal(nistCurve, decode.Point.Bytes)
+	if x == nil {
+		return nil, nil, fmt.Errorf("failed unmarshalling public key.\n%s", hex.Dump(decode.Point.Bytes))
+	}
+
+	return ski, &ecdsa.PublicKey{Curve: nistCurve, X: x, Y: y}, nil
+}
+
+//getCoordinatesByECSPKI extracts coordinates bit array from public key in SPKI format
+func getCoordinatesByECSPKI(spki []byte) ([]byte, error) {
+	_, pubKey, err := blobToPubKey(spki, oidNamedCurveP256)
+	if err != nil {
+		return nil, err
+	}
+	combinedCoordinates := elliptic.Marshal(namedCurveFromOID(oidNamedCurveP256), pubKey.X, pubKey.Y)
+	return combinedCoordinates, nil
 }
 
 //Example_deriveKey generates ECDH key pairs for Bob and Alice, then generates AES keys for both of them
@@ -462,7 +513,11 @@ func Example_deriveKey() {
 	cryptoClient := pb.NewCryptoClient(conn)
 
 	//Generate ECDH key pairs for Alice and Bob
-	ecParameters := []byte{0x06, 0x08, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07}
+	ecParameters, err := asn1.Marshal(oidNamedCurveP256)
+	if err != nil {
+		panic(fmt.Errorf("Unable To Encode Parameter OID: %s", err))
+	}
+
 	publicKeyECTemplate := util.NewAttributeMap(
 		util.NewAttribute(ep11.CKA_EC_PARAMS, ecParameters),
 		util.NewAttribute(ep11.CKA_EXTRACTABLE, false),
@@ -497,9 +552,12 @@ func Example_deriveKey() {
 		util.NewAttribute(ep11.CKA_ENCRYPT, true),
 		util.NewAttribute(ep11.CKA_DECRYPT, true),
 	)
+	combinedCoordinates, err := getCoordinatesByECSPKI(bobECKeypairResponse.PubKey)
+	if err != nil {
+		panic(fmt.Errorf("Alice EC Key Cannot Get Coordinates: %s", err))
+	}
 	aliceDerivekeyRequest := &pb.DeriveKeyRequest{
-		Mech: &pb.Mechanism{Mechanism: ep11.CKM_ECDH1_DERIVE, Parameter: getYByECSPKI(bobECKeypairResponse.PubKey)},
-		//pubkey cannot be used here, instead, the Y cordinator bit string shall be used as parameter
+		Mech:     &pb.Mechanism{Mechanism: ep11.CKM_ECDH1_DERIVE, Parameter: combinedCoordinates},
 		Template: deriveKeyTemplate,
 		BaseKey:  aliceECKeypairResponse.PrivKey,
 	}
@@ -507,11 +565,14 @@ func Example_deriveKey() {
 	if err != nil {
 		panic(fmt.Errorf("Alice EC Key Derive Error: %s", err))
 	}
-	fmt.Printf("Alice AES key derives with checksum %v\n", aliceDerivekeyResponse.CheckSum)
 
 	//Derive AES key for Bob
+	combinedCoordinates, err = getCoordinatesByECSPKI(aliceECKeypairResponse.PubKey)
+	if err != nil {
+		panic(fmt.Errorf("Bob EC Key Cannot Get Coordinates: %s", err))
+	}
 	bobDerivekeyRequest := &pb.DeriveKeyRequest{
-		Mech: &pb.Mechanism{Mechanism: ep11.CKM_ECDH1_DERIVE, Parameter: getYByECSPKI(aliceECKeypairResponse.PubKey)},
+		Mech: &pb.Mechanism{Mechanism: ep11.CKM_ECDH1_DERIVE, Parameter: combinedCoordinates},
 		//pubkey cannot be used here, instead, the Y cordinator bit string shall be used as parameter
 		Template: deriveKeyTemplate,
 		BaseKey:  bobECKeypairResponse.PrivKey,
@@ -520,13 +581,17 @@ func Example_deriveKey() {
 	if err != nil {
 		panic(fmt.Errorf("Bob EC Key Derive Error: %s", err))
 	}
-	fmt.Printf("Bob AES key derives with checksum %v\n", bobDerivekeyResponse.CheckSum)
+	if !bytes.Equal(aliceDerivekeyResponse.CheckSum, bobDerivekeyResponse.CheckSum) {
+		panic(fmt.Errorf("Alice and Bob Get Different Derive Key Checksum: %v -- %v",
+			aliceDerivekeyResponse.CheckSum, bobDerivekeyResponse.CheckSum))
+	} else {
+		fmt.Println("Alice and Bob get same derived key")
+	}
 
 	return
 
 	// Output:
 	// Generated Alice EC key pairs
 	// Generated Bob EC key pairs
-	// Alice EC key derives with checksum [...]
-	// Bob EC key derives with checksum [...]
+	// Alice and Bob get same derived key
 }
