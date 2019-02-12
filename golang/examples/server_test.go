@@ -363,8 +363,9 @@ func Example_wrapAndUnwrapKey() {
 	generateNewKeyStatus, err := cryptoClient.GenerateKey(context.Background(), generateKeyRequest)
 	if err != nil {
 		panic(fmt.Errorf("Generate DES3 Key Error: %s", err))
+	} else {
+		fmt.Println("Generated DES3 key")
 	}
-	fmt.Printf("Generated DES3 key with checksum %v\n", generateNewKeyStatus.CheckSum[:3])
 
 	//Generate RSA key pairs
 	publicExponent := []byte{0x11}
@@ -424,13 +425,17 @@ func Example_wrapAndUnwrapKey() {
 	if err != nil {
 		panic(fmt.Errorf("Unwrap DES3 key error: %s", err))
 	}
-	fmt.Printf("Unwraped DES3 key with checksum %v\n", unWrapedResponse.CheckSum[:3])
+	if !bytes.Equal(generateNewKeyStatus.GetCheckSum()[:3], unWrapedResponse.GetCheckSum()[:3]) {
+		panic(fmt.Errorf("Unwrap DES3 Key Has Different Checksum from Original Key"))
+	} else {
+		fmt.Println("Unwraped DES3 key")
+	}
 
 	// Output:
-	// Generated DES3 key with checksum [...]
+	// Generated DES3 key
 	// Generated PKCS key pairs
 	// Wraped DES3 key
-	// Unwraped DES3 key with checksum [...]
+	// Unwraped DES3 key
 }
 
 var (
@@ -508,7 +513,11 @@ func Example_deriveKey() {
 	cryptoClient := pb.NewCryptoClient(conn)
 
 	//Generate ECDH key pairs for Alice and Bob
-	ecParameters := []byte{0x06, 0x08, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07}
+	ecParameters, err := asn1.Marshal(oidNamedCurveP256)
+	if err != nil {
+		panic(fmt.Errorf("Unable To Encode Parameter OID: %s", err))
+	}
+
 	publicKeyECTemplate := util.NewAttributeMap(
 		util.NewAttribute(ep11.CKA_EC_PARAMS, ecParameters),
 		util.NewAttribute(ep11.CKA_EXTRACTABLE, false),
@@ -548,8 +557,7 @@ func Example_deriveKey() {
 		panic(fmt.Errorf("Alice EC Key Cannot Get Coordinates: %s", err))
 	}
 	aliceDerivekeyRequest := &pb.DeriveKeyRequest{
-		Mech: &pb.Mechanism{Mechanism: ep11.CKM_ECDH1_DERIVE, Parameter: combinedCoordinates},
-		//pubkey cannot be used here, instead, the Y cordinator bit string shall be used as parameter
+		Mech:     &pb.Mechanism{Mechanism: ep11.CKM_ECDH1_DERIVE, Parameter: combinedCoordinates},
 		Template: deriveKeyTemplate,
 		BaseKey:  aliceECKeypairResponse.PrivKey,
 	}
