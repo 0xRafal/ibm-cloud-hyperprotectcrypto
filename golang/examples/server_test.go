@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	address = "zlxcn002.torolab.ibm.com:29876"
+	address = "localhost:9876"
 )
 
 // Example_getMechnismInfo gets mechnism list and retrieve detail information for CKM_RSA_PKCS
