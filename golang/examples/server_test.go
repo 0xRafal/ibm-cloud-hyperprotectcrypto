@@ -509,7 +509,6 @@ func Example_deriveKey() {
 		panic(fmt.Errorf("did not connect: %v", err))
 	}
 	defer conn.Close()
-
 	cryptoClient := pb.NewCryptoClient(conn)
 
 	//Generate ECDH key pairs for Alice and Bob
@@ -530,14 +529,13 @@ func Example_deriveKey() {
 		Mech:            &pb.Mechanism{Mechanism: ep11.CKM_EC_KEY_PAIR_GEN},
 		PubKeyTemplate:  publicKeyECTemplate,
 		PrivKeyTemplate: privateKeyECTemplate,
-		PrivKeyId:       uuid.NewV4().String(),
-		PubKeyId:        uuid.NewV4().String(),
 	}
 	aliceECKeypairResponse, err := cryptoClient.GenerateKeyPair(context.Background(), generateECKeypairRequest)
 	if err != nil {
 		panic(fmt.Errorf("Generate Alice EC Key Pair Error: %s", err))
 	}
 	fmt.Println("Generated Alice EC key pairs")
+
 	bobECKeypairResponse, err := cryptoClient.GenerateKeyPair(context.Background(), generateECKeypairRequest)
 	if err != nil {
 		panic(fmt.Errorf("Generate Bob EC Key Pair Error: %s", err))
@@ -554,7 +552,7 @@ func Example_deriveKey() {
 	)
 	combinedCoordinates, err := getCoordinatesByECSPKI(bobECKeypairResponse.PubKey)
 	if err != nil {
-		panic(fmt.Errorf("Alice EC Key Cannot Get Coordinates: %s", err))
+		panic(fmt.Errorf("Bob EC Key Cannot Get Coordinates: %s", err))
 	}
 	aliceDerivekeyRequest := &pb.DeriveKeyRequest{
 		Mech:     &pb.Mechanism{Mechanism: ep11.CKM_ECDH1_DERIVE, Parameter: combinedCoordinates},
@@ -569,11 +567,10 @@ func Example_deriveKey() {
 	//Derive AES key for Bob
 	combinedCoordinates, err = getCoordinatesByECSPKI(aliceECKeypairResponse.PubKey)
 	if err != nil {
-		panic(fmt.Errorf("Bob EC Key Cannot Get Coordinates: %s", err))
+		panic(fmt.Errorf("Alice EC Key Cannot Get Coordinates: %s", err))
 	}
 	bobDerivekeyRequest := &pb.DeriveKeyRequest{
-		Mech: &pb.Mechanism{Mechanism: ep11.CKM_ECDH1_DERIVE, Parameter: combinedCoordinates},
-		//pubkey cannot be used here, instead, the Y cordinator bit string shall be used as parameter
+		Mech:     &pb.Mechanism{Mechanism: ep11.CKM_ECDH1_DERIVE, Parameter: combinedCoordinates},
 		Template: deriveKeyTemplate,
 		BaseKey:  bobECKeypairResponse.PrivKey,
 	}
