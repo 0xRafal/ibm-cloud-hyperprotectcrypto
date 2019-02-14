@@ -326,7 +326,6 @@ func Example_digestKey() {
 	}
 
 	// Output:
-	// Digest data using single digest operation: 294f19f8adf4d0276a51f56bd91dc2638e76524a
 	// Digest data using multiple operations: 294f19f8adf4d0276a51f56bd91dc2638e76524a
 }
 
