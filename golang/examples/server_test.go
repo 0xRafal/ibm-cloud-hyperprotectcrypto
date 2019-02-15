@@ -200,7 +200,7 @@ func Example_digest() {
 
 	cryptoClient := pb.NewCryptoClient(conn)
 
-	digestData := []byte("This is the data longer than 64 bytes so that multiple digest operation is needed")
+	digestData := []byte("This is the data longer than 64 bytes so that multiple digest operations are needed")
 	digestInitRequest := &pb.DigestInitRequest{
 		Mech: &pb.Mechanism{Mechanism: ep11.CKM_SHA_1},
 	}
