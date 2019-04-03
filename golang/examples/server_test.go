@@ -42,16 +42,16 @@ func Example_getMechnismInfo() {
 	mechanismInfoRequest := &pb.GetMechanismInfoRequest{
 		Mech: ep11.CKM_RSA_PKCS,
 	}
-	mechanismInfoResponse, err := cryptoClient.GetMechanismInfo(context.Background(), mechanismInfoRequest)
+	_, err = cryptoClient.GetMechanismInfo(context.Background(), mechanismInfoRequest)
 	if err != nil {
 		panic(fmt.Errorf("Get mechanism info error: %s", err))
 	}
-	fmt.Printf("Got CKM_RSA_PKCS mechanism info: %v\n", mechanismInfoResponse.MechInfo)
+	fmt.Printf("Got CKM_RSA_PKCS mechanism info\n")
 
 	// Output:
 	// Got mechanism list:
 	// [CKM_RSA_PKCS CKM_RSA_PKCS_KEY_PAIR_GEN CKM_RSA_X9_31_KEY_PAIR_GEN CKM_RSA_PKCS_PSS CKM_SHA1_RSA_X9_31] ...
-	// Got CKM_RSA_PKCS mechanism info: MinKeySize:512 MaxKeySize:4096 Flags:404224
+	// Got CKM_RSA_PKCS mechanism info
 }
 
 //Example_encryptAndecrypt encrypt and decrypt a piece of text.
@@ -250,83 +250,8 @@ func Example_digest() {
 	}
 
 	// Output:
-	// Digest data using single digest operation: 294f19f8adf4d0276a51f56bd91dc2638e76524a
-	// Digest data using multiple operations: 294f19f8adf4d0276a51f56bd91dc2638e76524a
-}
-
-// Example_digestKey calculate digest on a piece of text and a secret key
-func Example_digestKey() {
-	conn, err := grpc.Dial(address, grpc.WithInsecure())
-	if err != nil {
-		panic(fmt.Errorf("did not connect: %v", err))
-	}
-	defer conn.Close()
-
-	cryptoClient := pb.NewCryptoClient(conn)
-
-	//Generate 512 bits DES3 key
-	keyLen := 512
-	keyTemplate := util.NewAttributeMap(
-		util.NewAttribute(ep11.CKA_VALUE_LEN, (uint64)(keyLen/8)),
-		util.NewAttribute(ep11.CKA_IBM_USE_AS_DATA, true),
-	)
-	keygenmsg := &pb.GenerateKeyRequest{
-		Mech:     &pb.Mechanism{Mechanism: ep11.CKM_DES3_KEY_GEN},
-		Template: keyTemplate,
-	}
-	generateKeyStatus, err := cryptoClient.GenerateKey(context.Background(), keygenmsg)
-	if err != nil {
-		panic(fmt.Errorf("GenerateKey Error: %s", err))
-	}
-	fmt.Println("Generated DES3 Key")
-
-	digestData := []byte("This is the data longer than 64 bytes so that multiple digest operation is needed")
-	digestInitRequest := &pb.DigestInitRequest{
-		Mech: &pb.Mechanism{Mechanism: ep11.CKM_SHA256},
-	}
-	//Digest using mutiple operations
-	digestInitResponse, err := cryptoClient.DigestInit(context.Background(), digestInitRequest)
-	if err != nil {
-		panic(fmt.Errorf("Digest init error: %s", err))
-	}
-	digestUpdateRequest := &pb.DigestUpdateRequest{
-		State: digestInitResponse.State,
-		Data:  digestData[:64],
-	}
-	digestUpdateResponse, err := cryptoClient.DigestUpdate(context.Background(), digestUpdateRequest)
-	if err != nil {
-		panic(fmt.Errorf("Digest update error: %s", err))
-	}
-	digestUpdateRequest = &pb.DigestUpdateRequest{
-		State: digestUpdateResponse.State,
-		Data:  digestData[64:],
-	}
-	digestUpdateResponse, err = cryptoClient.DigestUpdate(context.Background(), digestUpdateRequest)
-	if err != nil {
-		panic(fmt.Errorf("Digest Update Error: %s", err))
-	}
-	//Digest Key data
-	digestKeyRequest := &pb.DigestKeyRequest{
-		State: digestUpdateResponse.State,
-		Key:   generateKeyStatus.Key,
-	}
-	digestKeyResponse, err := cryptoClient.DigestKey(context.Background(), digestKeyRequest)
-	if err != nil {
-		panic(fmt.Errorf("Digest Key Error: %s", err))
-	}
-	//Digest final
-	digestFinalRequestInfo := &pb.DigestFinalRequest{
-		State: digestKeyResponse.State,
-	}
-	digestFinalResponse, err := cryptoClient.DigestFinal(context.Background(), digestFinalRequestInfo)
-	if err != nil {
-		panic(fmt.Errorf("Digest Final Error: %s", err))
-	} else {
-		fmt.Printf("Digest data and key using multiple operations: %x\n", digestFinalResponse.Digest)
-	}
-
-	// Output:
-	// Digest data using multiple operations: 294f19f8adf4d0276a51f56bd91dc2638e76524a
+	// Digest data using single digest operation: 56aee95b369b72e16969b8d5f8fe940019afac98
+	// Digest data using multiple operations: 56aee95b369b72e16969b8d5f8fe940019afac98
 }
 
 // Example_signAndVerifyUsingRSAKeyPair sign on a piece of data and verify it
