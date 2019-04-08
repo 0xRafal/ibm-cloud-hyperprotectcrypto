@@ -1,3 +1,5 @@
+.gitignore
 golang/golang
 .vscode
 .DS_Store
+.com.greenworldsoft.syncfolderspro

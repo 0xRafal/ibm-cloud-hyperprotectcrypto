@@ -8,6 +8,9 @@ package util
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"encoding/asn1"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -134,4 +137,100 @@ func Convert(err error) (bool, *pb.Grep11Error) {
 	}
 
 	return false, err2
+}
+
+var (
+	oidNamedCurveP224 = asn1.ObjectIdentifier{1, 3, 132, 0, 33}
+	oidNamedCurveP256 = asn1.ObjectIdentifier{1, 2, 840, 10045, 3, 1, 7} //prime256v1
+	oidNamedCurveP384 = asn1.ObjectIdentifier{1, 3, 132, 0, 34}
+	oidNamedCurveP521 = asn1.ObjectIdentifier{1, 3, 132, 0, 35}
+	OIDECPublicKey    = asn1.ObjectIdentifier{1, 2, 840, 10045, 2, 1}
+)
+
+//GetNamedCurveFromOID returns Curve from specified curve OID
+func GetNamedCurveFromOID(oid asn1.ObjectIdentifier) elliptic.Curve {
+	switch {
+	case oid.Equal(oidNamedCurveP224):
+		return elliptic.P224()
+	case oid.Equal(oidNamedCurveP256):
+		return elliptic.P256()
+	case oid.Equal(oidNamedCurveP384):
+		return elliptic.P384()
+	case oid.Equal(oidNamedCurveP521):
+		return elliptic.P521()
+	}
+	return nil
+}
+
+//GetNamedCurveAndOIDFromNumBits returns EC curve && curve OID supported by elliptic package
+func GetNamedCurveAndOIDFromNumBits(nbits int32) (elliptic.Curve, asn1.ObjectIdentifier) {
+	switch nbits {
+	case 224:
+		return elliptic.P224(), oidNamedCurveP224
+	case 256:
+		return elliptic.P256(), oidNamedCurveP256
+	case 384:
+		return elliptic.P384(), oidNamedCurveP384
+	case 521:
+		return elliptic.P521(), oidNamedCurveP521
+	}
+	return nil, nil
+}
+
+//GetCurveOIDFromNumBits returns curve OID from number of bits.
+func GetCurveOIDFromNumBits(nbits int32) asn1.ObjectIdentifier {
+	switch {
+	case nbits == 224:
+		return oidNamedCurveP224
+	case nbits == 256:
+		return oidNamedCurveP256
+	case nbits == 384:
+		return oidNamedCurveP384
+	case nbits == 521:
+		return oidNamedCurveP521
+	}
+	return nil
+}
+
+//ECKeyIdentificationASN defines the ECDSA priviate/public key identifier for ep11
+type ECKeyIdentificationASN struct {
+	KeyType asn1.ObjectIdentifier
+	Curve   asn1.ObjectIdentifier
+}
+
+//ECPubKeyASN defines ECDSA public key ASN1 encoding structure for ep11
+type ECPubKeyASN struct {
+	Ident ECKeyIdentificationASN
+	Point asn1.BitString
+}
+
+//GetECPubKeyFromSPKIBlob convert ep11 SPKI structure to golang ecdsa.PublicKey
+func GetECPubKeyFromSPKIBlob(curveOID asn1.ObjectIdentifier, pubKeyBlob []byte) (ecdsa.PublicKey, error) {
+	curve := GetNamedCurveFromOID(curveOID)
+	if curve == nil {
+		return ecdsa.PublicKey{}, fmt.Errorf("Unrecognized Curve from OID %v", curveOID)
+	}
+
+	decode := &ECPubKeyASN{}
+	_, err := asn1.Unmarshal(pubKeyBlob, decode)
+	if err != nil {
+		return ecdsa.PublicKey{}, fmt.Errorf("Failed unmarshalling public key: %s", err)
+	}
+
+	x, y := elliptic.Unmarshal(curve, decode.Point.Bytes)
+	if x == nil {
+		return ecdsa.PublicKey{}, fmt.Errorf("failed unmarshalling public key.\n%s", hex.Dump(decode.Point.Bytes))
+	}
+
+	return ecdsa.PublicKey{Curve: curve, X: x, Y: y}, nil
+}
+
+//GetPubkeyBytesFromSPKIBlob extracts coordinates bit array from public key in SPKI format
+func GetPubkeyBytesFromSPKIBlob(spki []byte) ([]byte, error) {
+	decode := &ECPubKeyASN{}
+	_, err := asn1.Unmarshal(spki, decode)
+	if err != nil {
+		return nil, fmt.Errorf("failed unmarshalling public key: [%s]", err)
+	}
+	return decode.Point.Bytes, nil
 }
