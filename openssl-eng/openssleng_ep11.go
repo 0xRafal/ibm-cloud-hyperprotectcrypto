@@ -41,6 +41,7 @@ import (
 )
 
 // The following IBM Cloud items need to be changed prior to running the sample program
+/*
 const address = "<grep11_server_address>:<port>"
 
 var callOpts = []grpc.DialOption{
@@ -49,6 +50,17 @@ var callOpts = []grpc.DialOption{
 		APIKey:   "<ibm_cloud_apikey>",
 		Endpoint: "<https://<iam_ibm_cloud_endpoint>",
 		Instance: "<hpcs_instance_id>",
+	}),
+}
+*/
+const address = "ep11.us-south.hs-crypto.test.cloud.ibm.com:9266"
+
+var callOpts = []grpc.DialOption{
+	grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{})),
+	grpc.WithPerRPCCredentials(&util.IAMPerRPCCredentials{
+		APIKey:   "1FHfWIVM5Hv54-NIkK5RJLFqH1ftSlnO3eu8y9l_J0Ce",
+		Endpoint: "https://iam.test.cloud.ibm.com",
+		Instance: "ed1548cc-d4eb-4938-85ee-5f1c3274df64",
 	}),
 }
 
@@ -69,6 +81,7 @@ func RemoteGenerateECDSAKeyPair(curveOIDData *C.uchar, curveOIDLength C.size_t, 
 		return 0
 	}
 
+	//conn, err := grpc.Dial(address, grpc.WithInsecure())
 	conn, err := grpc.Dial(address, callOpts...)
 	if err != nil {
 		fmt.Printf("Cannot connect: %v\n", err)
@@ -141,10 +154,14 @@ func RemoteGenerateECDSAKeyPair(curveOIDData *C.uchar, curveOIDLength C.size_t, 
 func RemoteSignSingle(privateKeyBlob *C.uchar, keyBlobLen C.size_t, dgst *C.uchar, dgstLen C.size_t,
 	signature *C.uchar, signatureLen *C.size_t) int32 {
 
+		fmt.Printf("first line in RemoteSignSingle\n")
+
 	if privateKeyBlob == nil || dgst == nil || signature == nil || signatureLen == nil {
 		fmt.Printf("One of parameters is NULL\n")
 		return 0
 	}
+
+		fmt.Printf("before dial\n")
 
 	conn, err := grpc.Dial(address, callOpts...)
 	if err != nil {
@@ -153,6 +170,7 @@ func RemoteSignSingle(privateKeyBlob *C.uchar, keyBlobLen C.size_t, dgst *C.ucha
 	}
 	defer conn.Close()
 
+		fmt.Printf("after dial\n")
 	cryptoClient := pb.NewCryptoClient(conn)
 
 	signData := C.GoBytes(unsafe.Pointer(dgst), C.int(dgstLen))
@@ -168,12 +186,14 @@ func RemoteSignSingle(privateKeyBlob *C.uchar, keyBlobLen C.size_t, dgst *C.ucha
 		PrivKey: keyBlob,
 		Data:    signData,
 	}
+		fmt.Printf("before sign single\n")
 	SignSingleResponse, err := cryptoClient.SignSingle(context.Background(), SignSingleRequest)
 	if err != nil {
 		fmt.Printf("SignSingle Error: %s", err)
 		return 0
 	}
 
+		fmt.Printf("after sign single\n")
 	var dataLen = len(SignSingleResponse.Signature)
 	if *signatureLen < C.size_t(dataLen) {
 		fmt.Printf("Signature buffer (%d) is not big enough to for signature data (%d)\n", *signatureLen, dataLen)
