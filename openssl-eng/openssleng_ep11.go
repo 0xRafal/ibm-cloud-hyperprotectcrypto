@@ -7,13 +7,8 @@ SPDX-License-Identifier: Apache-2.0
 package main
 
 /*
-#cgo CFLAGS: -std=c99 -I../common -Iopenssl-1.0.2r/crypto -g -O0 -Wall
-#cgo darwin CFLAGS: -I/usr/local/opt/openssl/include
-#cgo linux CFLAGS: -I/usr/local/openssl-1.0.2r/include
-
-#cgo LDFLAGS: -lcrypto
-#cgo darwin LDFLAGS: -L/usr/local/opt/openssl/lib
-#cgo linux LDFLAGS: -L/usr/local/openssl-1.0.2r/lib
+#cgo CFLAGS: -std=c99 -g -O0 -Wall -I../common -Iopenssl-1.1.1c/crypto -Iopenssl-1.1.1c/crypto/include -Iopenssl-1.1.1c/include -I/usr/local/openssl-1.1.1c/include
+#cgo LDFLAGS: -lcrypto -L/usr/local/openssl-1.1.1c/lib
 
 #include <unistd.h>
 #include <stdint.h>
