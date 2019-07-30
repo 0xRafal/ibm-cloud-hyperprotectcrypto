@@ -683,10 +683,17 @@ static int bind_helper(ENGINE *e, const char *id)
         pkey_asn1_method.pem_str = my_pem_str; //without this pem_str value, openssl will get crashed
 
         EVP_PKEY_asn1_copy(&pkey_asn1_method, orig_asn1_meth);
-
-        pkey_asn1_method.priv_decode = my_priv_decode;
-        pkey_asn1_method.priv_encode = my_priv_encode;
-        pkey_asn1_method.priv_print = my_priv_print;
+        //EVP_PKEY_asn1_copy() in 1.1.1c missed a few questions
+        EVP_PKEY_asn1_set_security_bits(&pkey_asn1_method, orig_asn1_meth->pkey_security_bits);
+        EVP_PKEY_asn1_set_public_check(&pkey_asn1_method, orig_asn1_meth->pkey_public_check);
+        EVP_PKEY_asn1_set_param_check(&pkey_asn1_method, orig_asn1_meth->pkey_param_check);
+        EVP_PKEY_asn1_set_set_pub_key(&pkey_asn1_method, orig_asn1_meth->set_pub_key);
+        EVP_PKEY_asn1_set_get_pub_key(&pkey_asn1_method, orig_asn1_meth->get_pub_key);
+        EVP_PKEY_asn1_set_set_priv_key(&pkey_asn1_method, NULL);
+        EVP_PKEY_asn1_set_get_priv_key(&pkey_asn1_method, NULL);
+        
+        //overload functions
+        EVP_PKEY_asn1_set_private(&pkey_asn1_method, my_priv_decode, my_priv_encode, my_priv_print);
         pkey_asn1_method.pub_cmp = my_pub_cmp;
         pkey_asn1_method.param_cmp = my_param_cmp;
     }
