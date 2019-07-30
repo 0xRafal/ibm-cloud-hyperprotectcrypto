@@ -2,14 +2,19 @@
 #include <string.h>
 
 #include <openssl/engine.h>
-#include <evp/evp_locl.h>
-#include <ec/ec_lcl.h>
 #include <openssl/evp.h>
 #include <openssl/ossl_typ.h>
 #include <openssl/bn.h>
-#include <ecdsa/ecs_locl.h>
+#include <openssl/pem.h>
+#include <openssl/x509.h>
+
+#include <internal/evp_int.h>
+#include <internal/asn1_int.h>
+#include <internal/x509_int.h>
+
+#include <evp/evp_locl.h>
+#include <ec/ec_lcl.h>
 #include <asn1/asn1_locl.h>
-#include <pem/pem.h>
 
 //ep11 API
 int RemoteGenerateECDSAKeyPair(const unsigned char *curveOIDData, size_t curveOIDLength, unsigned char *privateKey, size_t *privateKeyLen, 
@@ -49,108 +54,111 @@ EC_KEY *o2i_ECPublicKey(EC_KEY **a, const unsigned char **in, long len)
     return ret;
 }
 
-//EC extra data functions
-static void * (*ec_extra_data_dup_func) (void *) = NULL;
-static void ec_extra_data_free_func (void * privateKeyBlobData) {
-    OPENSSL_free(privateKeyBlobData);
-    return;
-}
-static void ec_extra_data_clear_free_func (void * privateKeyBlobData) {
-    OPENSSL_free(privateKeyBlobData);
-    return;    
-}
-
-//======ECDSA methods
-static ECDSA_SIG *my_ecdsa_do_sign(const unsigned char *dgst, int dgst_len,
-                            const BIGNUM *inv, const BIGNUM *rp, EC_KEY *eckey)
+static ECDSA_SIG *my_ossl_ecdsa_sign_sig(const unsigned char *dgst, int dgst_len,
+                               const BIGNUM *in_kinv, const BIGNUM *in_r,
+                               EC_KEY *eckey)
 {
-    //reference code ecdsa_do_sign() in ecs_ossl.c
-    int ok = 0, bits;
-    size_t keyBlobLen = 0;
-    BIGNUM *order = NULL;
+    int ok = 0, i; 
+    BIGNUM /* *kinv = NULL, *s,*/ *m = NULL;
+    const BIGNUM *order = NULL;
+    //BN_CTX *ctx = NULL;
     const EC_GROUP *group;
     ECDSA_SIG *ret;
-    ECDSA_DATA *ecdsa;
     const BIGNUM *priv_key;
+    
+    size_t keyBlobLen = 0;
     unsigned char *ext_data = NULL, *keyBlobData = NULL;
     unsigned char sig[140]; // the biggest signature is (521+7)/8 * 2 = 132 bytes
     size_t siglen = 0;
-    ecdsa = ecdsa_check(eckey);
+
     group = EC_KEY_get0_group(eckey);
     priv_key = EC_KEY_get0_private_key(eckey);
 
-    if (group == NULL || priv_key == NULL || ecdsa == NULL) {
-        ECDSAerr(ECDSA_F_ECDSA_DO_SIGN, ERR_R_PASSED_NULL_PARAMETER);
+    if (group == NULL || priv_key == NULL) {
+        ECerr(EC_F_OSSL_ECDSA_SIGN_SIG, ERR_R_PASSED_NULL_PARAMETER);
+        return NULL;
+    }
+
+    if (!EC_KEY_can_sign(eckey)) {
+        ECerr(EC_F_OSSL_ECDSA_SIGN_SIG, EC_R_CURVE_DOES_NOT_SUPPORT_SIGNING);
         return NULL;
     }
 
     ret = ECDSA_SIG_new();
-    if (!ret) {
-        ECDSAerr(ECDSA_F_ECDSA_DO_SIGN, ERR_R_MALLOC_FAILURE);
+    if (ret == NULL) {
+        ECerr(EC_F_OSSL_ECDSA_SIGN_SIG, ERR_R_MALLOC_FAILURE);
         return NULL;
     }
-
-    if ((order = BN_new()) == NULL) {
-        ECDSAerr(ECDSA_F_ECDSA_DO_SIGN, ERR_R_MALLOC_FAILURE);
+    ret->r = BN_new();
+    ret->s = BN_new();
+    if (ret->r == NULL || ret->s == NULL) {
+        ECerr(EC_F_OSSL_ECDSA_SIGN_SIG, ERR_R_MALLOC_FAILURE);
         goto err;
     }
+    /*s = ret->s;
 
-    if (!EC_GROUP_get_order(group, order, NULL)) {
-        ECDSAerr(ECDSA_F_ECDSA_DO_SIGN, ERR_R_EC_LIB);
+    if ((ctx = BN_CTX_new()) == NULL
+        || (m = BN_new()) == NULL) {
+        ECerr(EC_F_OSSL_ECDSA_SIGN_SIG, ERR_R_MALLOC_FAILURE);
         goto err;
-    }
+    }*/
 
-    bits = BN_num_bits(order);
+    order = EC_GROUP_get0_order(group);
+    i = BN_num_bits(order);
     /*
-     * Need to truncate digest if it is too long: first truncate whole bytes. 
-     * According to https://en.wikipedia.org/wiki/Elliptic_Curve_Digital_Signature_Algorithm, only 
+     * Need to truncate digest if it is too long: first truncate whole bytes.
+     * According to https://en.wikipedia.org/wiki/Elliptic_Curve_Digital_Signature_Algorithm, only
      * L leftmost bits of HASH is used to generate signature, where L is the bit length of the group order
      */
-    if (8 * dgst_len > bits)
-        dgst_len = (bits + 7) / 8;
-    /*For now this scenario will not happen: order bits cannot be divided by 8, and dgst bits is longer order bits.*/
-    if (8 * dgst_len > bits) {
-        ECDSAerr(ECDSA_F_ECDSA_DO_SIGN, ERR_R_EC_LIB);
+    if (8 * dgst_len > i)
+        dgst_len = (i + 7) / 8;
+    if (!BN_bin2bn(dgst, dgst_len, m)) {
+        ECerr(EC_F_OSSL_ECDSA_SIGN_SIG, ERR_R_BN_LIB);
+        goto err;
+    }
+    /* If still too long, truncate remaining bits with a shift */
+    if ((8 * dgst_len > i) && !BN_rshift(m, m, 8 - (i & 0x7))) {
+        ECerr(EC_F_OSSL_ECDSA_SIGN_SIG, ERR_R_BN_LIB);
         goto err;
     }
 
-    ext_data = EC_EX_DATA_get_data(eckey->method_data, ec_extra_data_dup_func, ec_extra_data_free_func, ec_extra_data_clear_free_func);
+    ext_data = EC_KEY_get_ex_data(eckey, CRYPTO_EX_INDEX_EC_KEY);
     if (ext_data == NULL) {
-        ECDSAerr(ECDSA_F_ECDSA_DO_SIGN, ERR_R_EC_LIB);
+        ECDSAerr(EC_F_OSSL_ECDSA_SIGN_SIG, ERR_R_EC_LIB);
         printf("EC_EX_DATA_get_data failed\n");
         goto err;
     }
     memcpy(&keyBlobLen, ext_data, KEYBLOB_HEADER_LEN);
     keyBlobData = OPENSSL_malloc(keyBlobLen);
     if (keyBlobData == NULL) {
-        ECDSAerr(ECDSA_F_ECDSA_DO_SIGN, ERR_R_SYS_LIB);
-        printf("my_ecdsa_do_sign OPENSSL_malloc %d bytes failed\n", (int)keyBlobLen);
+        ECDSAerr(EC_F_OSSL_ECDSA_SIGN_SIG, ERR_R_MALLOC_FAILURE);
+        printf("my_ossl_ecdsa_sign_sig OPENSSL_malloc %d bytes failed\n", (int)keyBlobLen);
         goto err;
     }
     memcpy(keyBlobData, ext_data + KEYBLOB_HEADER_LEN, keyBlobLen);
-    
+
     siglen = sizeof(sig);
     int retRemote = RemoteSignSingle(keyBlobData, keyBlobLen, dgst, dgst_len, sig, &siglen);
     if (retRemote <= 0) {
-        ECDSAerr(ECDSA_F_ECDSA_DO_SIGN, ERR_R_CRYPTO_LIB);
+        ECDSAerr(EC_F_OSSL_ECDSA_SIGN_SIG, ERR_R_ENGINE_LIB);
         printf("RemoteSignSingle failed\n");
         goto err;
     }
     if (siglen % 2 != 0) {
-        ECDSAerr(ECDSA_F_ECDSA_DO_SIGN, ERR_R_CRYPTO_LIB);
+        ECDSAerr(EC_F_OSSL_ECDSA_SIGN_SIG, ERR_R_ENGINE_LIB);
         printf("Signature length is not even\n");
         goto err;
     }
     if (BN_bin2bn(sig, siglen/2, ret->r) == NULL) {
-        ECDSAerr(ECDSA_F_ECDSA_DO_SIGN, ERR_R_BN_LIB);
+        ECDSAerr(EC_F_OSSL_ECDSA_SIGN_SIG, ERR_R_BN_LIB);
         printf("BN_bin2bn for r failed\n");
-        goto err;       
+        goto err;
     }
     if (BN_bin2bn(sig + siglen/2, siglen/2, ret->s) == NULL) {
-        ECDSAerr(ECDSA_F_ECDSA_DO_SIGN, ERR_R_BN_LIB);
+        ECDSAerr(EC_F_OSSL_ECDSA_SIGN_SIG, ERR_R_BN_LIB);
         printf("BN_bin2bn for s failed\n");
-        goto err;       
-    }
+        goto err;
+    }    
 
     ok = 1;
  err:
@@ -158,23 +166,69 @@ static ECDSA_SIG *my_ecdsa_do_sign(const unsigned char *dgst, int dgst_len,
         ECDSA_SIG_free(ret);
         ret = NULL;
     }
-    if (order)
-        BN_free(order);
+    //BN_CTX_free(ctx);
+    BN_clear_free(m);
+    //BN_clear_free(kinv);
     if (keyBlobData)
         OPENSSL_free(keyBlobData);
-
     return ret;
 }
 
-static ECDSA_METHOD ecdsa_methds = {
-    "my ecdsa methods",
-    my_ecdsa_do_sign,
-    NULL, // ecdsa_sign_setup. it is not needed since it is called within ecdsa_do_sign().
-    NULL, // ecdsa_do_verify. it is needed when doing certificate/csr verify. it is setup in bind_helper.
-    0,    // it is zero in builtin ECDSA_METHOD openssl_ecdsa_meth.
-    NULL  // it is zero in builtin ECDSA_METHOD openssl_ecdsa_meth.
-    };
-//======ECDSA methods end
+static EC_KEY_METHOD openssl_ec_key_method = {
+    "my EC_KEY method",
+    0,
+    0,0,0,0,0,0, //These are 0s, same as crypto/ec/ec_kmeth.c static const EC_KEY_METHOD openssl_ec_key_method
+    NULL, //ossl_ec_key_gen,
+    NULL, //ossl_ecdh_compute_key,
+    NULL, //ossl_ecdsa_sign,
+    NULL, //ossl_ecdsa_sign_setup,
+    my_ossl_ecdsa_sign_sig, //ossl_ecdsa_sign_sig,
+    NULL, //ossl_ecdsa_verify,
+    NULL, //ossl_ecdsa_verify_sig  
+};
+
+static const EC_KEY_METHOD *get_ec_key_method()
+{
+	const EC_KEY_METHOD *default_methods = EC_KEY_get_default_method();
+
+    int (*psign)(int type, const unsigned char *dgst,
+            int dlen, unsigned char *sig,
+            unsigned int *siglen,
+            const BIGNUM *kinv, const BIGNUM *r,
+            EC_KEY *eckey);
+    int (*psign_setup)(EC_KEY *eckey, BN_CTX *ctx_in,
+            BIGNUM **kinvp, BIGNUM **rp);
+            
+    int (*pverify)(int type, const unsigned
+            char *dgst, int dgst_len,
+            const unsigned char *sigbuf,
+            int sig_len, EC_KEY *eckey);
+    int (*pverify_sig)(const unsigned char *dgst,
+            int dgst_len,
+            const ECDSA_SIG *sig,
+            EC_KEY *eckey);
+
+    int (*pck)(unsigned char **pout,
+            size_t *poutlen,
+            const EC_POINT *pub_key,
+            const EC_KEY *ecdh);
+            
+    int (*pkeygen)(EC_KEY *key);
+                                            
+    EC_KEY_METHOD_get_sign(default_methods, &psign, &psign_setup, NULL);
+    EC_KEY_METHOD_get_verify(default_methods, &pverify, &pverify_sig);
+    EC_KEY_METHOD_get_compute_key(default_methods, &pck);
+    EC_KEY_METHOD_get_keygen(default_methods, &pkeygen);
+    
+    openssl_ec_key_method.sign = psign;
+    openssl_ec_key_method.sign_setup = psign_setup;
+    openssl_ec_key_method.verify = pverify;
+    openssl_ec_key_method.verify_sig = pverify_sig;
+    openssl_ec_key_method.compute_key = pck;
+    openssl_ec_key_method.keygen = pkeygen;
+    
+	return &openssl_ec_key_method;
+}
 
 //======PKEY_METHODS for EC
 static EVP_PKEY_METHOD pkey_method;
@@ -202,8 +256,133 @@ static int get_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth, const int **nids, 
     return 0;
 }
 
+//reference ec_key_simple_generate_key() in ec_key.c
+static int my_ec_key_simple_generate_key(EC_KEY *eckey)
+{
+    int ok = 0;
+    //BN_CTX *ctx = NULL;
+    BIGNUM *priv_key = NULL;
+    const BIGNUM *order = NULL;
+    EC_POINT *pub_key = NULL;
+    
+    //added declarations
+    EC_KEY * ret_ec_key = NULL;   
+    unsigned char privateKey[640]; //keyblob is lower than 600 bytes
+    unsigned char *pubKeyCoordinates = NULL;
+    unsigned char * blobLenAndData = NULL;
+    size_t privateKeyLen = 0;
+    size_t pubKeyLen = 0;
+    int success = 0, ret = 0;
+
+    const EC_GROUP *group = NULL;
+    const ASN1_OBJECT * curve_OID = NULL;
+    unsigned char full_OID[64] = {0};
+
+    if (eckey->priv_key == NULL) {
+        priv_key = BN_new();
+        if (priv_key == NULL)
+            goto err;
+    } else
+        priv_key = eckey->priv_key;
+
+    if (eckey->pub_key == NULL) {
+        pub_key = EC_POINT_new(eckey->group);
+        if (pub_key == NULL)
+            goto err;
+    } else
+        pub_key = eckey->pub_key;
+
+    eckey->priv_key = priv_key;
+    eckey->pub_key = pub_key;
+ 
+    //get curve OID
+    group = EC_KEY_get0_group(eckey);
+    if (group == NULL) {
+        ECDSAerr(EC_F_PKEY_EC_KEYGEN, ERR_R_PASSED_NULL_PARAMETER);
+        goto err;
+    }
+    if (EC_GROUP_get_asn1_flag(group)) {
+        int curve_name = EC_GROUP_get_curve_name(group);
+        if (curve_name) {
+            curve_OID = OBJ_nid2obj(curve_name);
+            if (curve_OID == NULL) {
+                ECDSAerr(EC_F_PKEY_EC_KEYGEN, EC_R_ASN1_ERROR);
+                goto err;
+            }
+            //OBJ_nid2obj() returns internal static data and no need to free.
+            //curve_OID is raw bytes without asn1 type and length, now we add them
+            if (curve_OID->length + 2 > sizeof(full_OID)) {
+                ECDSAerr(EC_F_PKEY_EC_KEYGEN, EC_R_ASN1_ERROR);
+                goto err; 
+            }
+            memcpy(&full_OID[2], curve_OID->data, curve_OID->length);
+            full_OID[0] = 0x06; //type is object identifier
+            full_OID[1] = curve_OID->length;
+        } 
+        else {
+            ECDSAerr(EC_F_PKEY_EC_KEYGEN, EC_R_INVALID_CURVE);
+            goto err;
+        }
+    } 
+    else {
+        ECDSAerr(EC_F_PKEY_EC_KEYGEN, EC_R_ASN1_ERROR);
+        goto err;
+    }
+    
+    //get order bit size
+    if ((order = EC_GROUP_get0_order(group)) == NULL) {
+        ECDSAerr(EC_F_PKEY_EC_KEYGEN, EC_R_INVALID_GROUP_ORDER);
+        goto err;
+    }
+    int bits = BN_num_bits(order);
+    privateKeyLen = sizeof(privateKey);
+    pubKeyLen = 2 * (bits+7)/8 + 1; //there is one header byte, "04" as uncompressed 
+    pubKeyCoordinates = OPENSSL_malloc(pubKeyLen); 
+    if (pubKeyCoordinates == NULL) {
+        printf("my_ec_key_simple_generate_key OPENSSL_malloc %d failed\n", (int)pubKeyLen);
+        goto err;       
+    }
+    success = RemoteGenerateECDSAKeyPair((const unsigned char *)full_OID, curve_OID->length + 2, privateKey, &privateKeyLen, pubKeyCoordinates, &pubKeyLen);
+    if (success == 0) {
+        printf("RemoteGenerateECDSAKeyPair failed\n");
+        goto err;
+    }
+
+    //save privateKeyBlob.
+    blobLenAndData = OPENSSL_malloc(privateKeyLen + KEYBLOB_HEADER_LEN);
+    if (blobLenAndData == NULL) {
+        printf("OPENSSL_malloc failed to allocate %d bytes\n", (int)(privateKeyLen + KEYBLOB_HEADER_LEN));
+        goto err;
+    }
+    memcpy(blobLenAndData, &privateKeyLen, KEYBLOB_HEADER_LEN);
+    memcpy(blobLenAndData + KEYBLOB_HEADER_LEN, privateKey, privateKeyLen);
+    ret = EC_KEY_set_ex_data(eckey, CRYPTO_EX_INDEX_EC_KEY, (void *)blobLenAndData);
+    if (ret <= 0) {
+        printf("EC_KEY_set_ex_data failed\n");
+        goto err;
+    }
+    //save public key to EC_KEY public key structure
+    ret_ec_key = o2i_ECPublicKey(&eckey, (const unsigned char **)&pubKeyCoordinates, pubKeyLen);
+    if (ret_ec_key != NULL) {
+        pubKeyCoordinates -= pubKeyLen; //o2i_ECPublicKey change input pointer pubKeyCoordinates, need to change it back to free
+        ok = 1;
+    }
+    else {
+        EC_KEY_set_ex_data(eckey, CRYPTO_EX_INDEX_EC_KEY, NULL);
+        printf("o2i_ECPublicKey return NULL\n");
+    }
+err:
+    if (pubKeyCoordinates) {
+        OPENSSL_free(pubKeyCoordinates);
+    }
+    if (ok <= 0 && blobLenAndData) {
+        OPENSSL_free(blobLenAndData);
+    }   
+    return ok;
+}
+
 //reference pkey_ec_keygen() in ec_pmeth.c
-static int init_eckey(EVP_PKEY_CTX *ctx, EVP_PKEY *pkey)
+static int my_pkey_ec_keygen(EVP_PKEY_CTX *ctx, EVP_PKEY *pkey)
 {
     //openssl struct EC_PKEY_CTX defined in ec_pmeth.c, not in .h file
     typedef struct {
@@ -226,6 +405,7 @@ static int init_eckey(EVP_PKEY_CTX *ctx, EVP_PKEY *pkey)
         size_t kdf_outlen;
     } EC_PKEY_CTX;
     
+    int ret = 0;
     EC_KEY *ec = NULL;
     EC_PKEY_CTX *dctx = ctx->data;
     if (ctx->pkey == NULL && dctx->gen_group == NULL) {
@@ -233,146 +413,24 @@ static int init_eckey(EVP_PKEY_CTX *ctx, EVP_PKEY *pkey)
         return 0;
     }
     ec = EC_KEY_new();
-    if (!ec)
+    if (ec == NULL)
         return 0;
-    EVP_PKEY_assign_EC_KEY(pkey, ec);
-    if (ctx->pkey) {
-        /* Note: if error return, pkey is freed by parent routine */
-        if (!EVP_PKEY_copy_parameters(pkey, ctx->pkey))
-            return 0;
-    } else {
-        if (!EC_KEY_set_group(ec, dctx->gen_group))
-            return 0;
+    if (!EVP_PKEY_assign_EC_KEY(pkey, ec)) {
+        EC_KEY_free(ec);
+        return 0;
+    }
+    /* Note: if error is returned, we count on caller to free pkey->pkey.ec */
+    if (ctx->pkey != NULL)
+        ret = EVP_PKEY_copy_parameters(pkey, ctx->pkey);
+    else
+        ret = EC_KEY_set_group(ec, dctx->gen_group);   
+    if (ret == 0) {
+        return 0;
     }
     //reference EC_KEY_generate_key() in ec_key.c
     ec->priv_key = BN_new();
-    //BN_zero(ec->priv_key);
     ec->pub_key = EC_POINT_new(ec->group); 
-    return 1;  
-}
-static int my_ec_pkeygen(EVP_PKEY_CTX *ctx, EVP_PKEY *pkey)
-{
-    int ok = 0;
-    EC_KEY * ret_ec_key = NULL;
-    EC_KEY * ec_key = NULL;
-    unsigned char privateKey[640]; //keyblob is lower than 600 bytes
-    unsigned char *pubKeyCoordinates = NULL;
-    unsigned char * blobLenAndData = NULL;
-    size_t privateKeyLen = 0;
-    size_t pubKeyLen = 0;
-    int success = 0, ret = 0;
-
-    BIGNUM *order = NULL;
-    const EC_GROUP *group = NULL;
-    const ASN1_OBJECT * curve_OID = NULL;
-    unsigned char full_OID[64] = {0};
-
-    success = init_eckey(ctx, pkey);
-    if (success == 0) {
-        printf("init_eckey failed\n");
-        return 0;       
-    }
-    ec_key = pkey->pkey.ec;
-
-    group = EC_KEY_get0_group(ec_key);
-    if (group == NULL) {
-        ECDSAerr(ECDSA_F_ECDSA_DO_SIGN, ERR_R_PASSED_NULL_PARAMETER);
-        goto err;
-    }
-
-    //get curve OID
-    if (EC_GROUP_get_asn1_flag(group)) {
-        int curve_name = EC_GROUP_get_curve_name(group);
-        if (curve_name) {
-            curve_OID = OBJ_nid2obj(curve_name);
-            if (curve_OID == NULL) {
-                ECDSAerr(ECDSA_F_ECDSA_DO_SIGN, ERR_R_BAD_GET_ASN1_OBJECT_CALL);
-                goto err;
-            }
-            //OBJ_nid2obj() returns internal static data and no need to free.
-            //curve_OID is raw bytes without asn1 type and length, now we add them
-            if (curve_OID->length + 2 > sizeof(full_OID)) {
-                ECDSAerr(ECDSA_F_ECDSA_DO_SIGN, ERR_R_BAD_GET_ASN1_OBJECT_CALL);
-                goto err; 
-            }
-            memcpy(&full_OID[2], curve_OID->data, curve_OID->length);
-            full_OID[0] = 0x06; //type is object identifier
-            full_OID[1] = curve_OID->length;
-        } 
-        else {
-            ECDSAerr(ECDSA_F_ECDSA_DO_SIGN, ERR_R_BAD_GET_ASN1_OBJECT_CALL);
-            goto err;
-        }
-    } 
-    else {
-        ECDSAerr(ECDSA_F_ECDSA_DO_SIGN, ERR_R_BAD_GET_ASN1_OBJECT_CALL);
-        goto err;
-    }
-    
-    //get order bit size    
-    if ((order = BN_new()) == NULL) {
-        ECDSAerr(ECDSA_F_ECDSA_DO_SIGN, ERR_R_MALLOC_FAILURE);
-        goto err;
-    }
-
-    if (!EC_GROUP_get_order(group, order, NULL)) {
-        ECDSAerr(ECDSA_F_ECDSA_DO_SIGN, ERR_R_EC_LIB);
-        goto err;
-    }
-    int bits = BN_num_bits(order);
-    privateKeyLen = sizeof(privateKey);
-    pubKeyLen = 2 * (bits+7)/8 + 1; //there is one header byte, "04" as uncompressed 
-    pubKeyCoordinates = OPENSSL_malloc(pubKeyLen); 
-    if (pubKeyCoordinates == NULL) {
-        printf("my_ec_pkeygen OPENSSL_malloc %d failed\n", (int)pubKeyLen);
-        goto err;       
-    }
-    success = RemoteGenerateECDSAKeyPair((const unsigned char *)full_OID, curve_OID->length + 2, privateKey, &privateKeyLen, pubKeyCoordinates, &pubKeyLen);
-    if (success == 0) {
-        printf("RemoteGenerateECDSAKeyPair failed\n");
-        goto err;
-    }
-
-    //save privateKeyBlob.
-    blobLenAndData = OPENSSL_malloc(privateKeyLen + KEYBLOB_HEADER_LEN);
-    if (blobLenAndData == NULL) {
-        printf("OPENSSL_malloc failed to allocate %d bytes\n", (int)(privateKeyLen + KEYBLOB_HEADER_LEN));
-        goto err;
-    }
-    memcpy(blobLenAndData, &privateKeyLen, KEYBLOB_HEADER_LEN);
-    memcpy(blobLenAndData + KEYBLOB_HEADER_LEN, privateKey, privateKeyLen);
-    ret = EC_EX_DATA_set_data(&ec_key->method_data, (void *)blobLenAndData, ec_extra_data_dup_func,
-        ec_extra_data_free_func, ec_extra_data_clear_free_func);
-    if (ret == 0) {
-        printf("EC_EX_DATA_set_data failed\n");
-        goto err;
-    }
-    //save public key to EC_KEY public key structure
-    ret_ec_key = o2i_ECPublicKey(&ec_key, (const unsigned char **)&pubKeyCoordinates, pubKeyLen);
-    if (ret_ec_key != NULL) {
-        pubKeyCoordinates -= pubKeyLen; //o2i_ECPublicKey change input pointer pubKeyCoordinates, need to change it back to free
-        ok = 1;
-    }
-    else {
-        EC_EX_DATA_free_data(&ec_key->method_data, ec_extra_data_dup_func, ec_extra_data_free_func, 
-            ec_extra_data_clear_free_func);
-        blobLenAndData = NULL; //it is freed inside EC_EX_DATA_free_data()
-        printf("o2i_ECPublicKey return NULL\n");
-    }
-err:
-    if (order) {
-        BN_free(order);
-    }
-    if (pubKeyCoordinates) {
-        OPENSSL_free(pubKeyCoordinates);
-    }
-    if (ok <= 0 && ec_key) {
-        EVP_PKEY_assign_EC_KEY(pkey, NULL);
-    }
-    if (ok <= 0 && blobLenAndData) {
-        OPENSSL_free(blobLenAndData);
-    }   
-    return ok;
+    return my_ec_key_simple_generate_key(ec);  
 }
 //======PKEY_METHODS for EC ends
 
@@ -403,7 +461,7 @@ static int get_pkey_asn1_meths(ENGINE *e, EVP_PKEY_ASN1_METHOD **pmeth, const in
 static char* my_pem_str = "EC";
 
 //reference ec_ameth.c, removed V_ASN1_SEQUENCE part
-static EC_KEY *eckey_type2param(int ptype, void *pval)
+static EC_KEY *eckey_type2param(int ptype, const void *pval)
 {
     EC_KEY *eckey = NULL;
     EC_GROUP *group = NULL;
@@ -438,25 +496,25 @@ static EC_KEY *eckey_type2param(int ptype, void *pval)
     return NULL;
 }
 
-static int my_priv_decode (EVP_PKEY *pkey, PKCS8_PRIV_KEY_INFO *p8)
+static int my_priv_decode (EVP_PKEY *pkey, const PKCS8_PRIV_KEY_INFO *p8)
 {
     X509_ALGOR *pkeyalg = p8->pkeyalg;
-    ASN1_TYPE *blobData = p8->pkey;
+    ASN1_OCTET_STRING *blobData = p8->pkey;
     unsigned char * blobLenAndData = NULL;
 
     if (blobData == NULL) {
         printf("p8->pkey is NULL\n");
         return 0;
-    } else if (blobData->value.octet_string == NULL) {
-        printf("p8->pkey->value.octet_string is NULL\n");
+    } else if (blobData->data == NULL) {
+        printf("p8->pkey->data is NULL\n");
         return 0;       
     }
 
-    unsigned char *keyBlobRaw = blobData->value.octet_string->data;
-    size_t keyBlobRawLen = blobData->value.octet_string->length;
+    unsigned char *keyBlobRaw = blobData->data;
+    size_t keyBlobRawLen = blobData->length;
 
     //reference eckey_priv_decode() in ec_ameth.c 
-    void *pval = NULL;
+    const void *pval = NULL;
     int ptype;
     EC_KEY *eckey = NULL;
 
@@ -472,7 +530,6 @@ static int my_priv_decode (EVP_PKEY *pkey, PKCS8_PRIV_KEY_INFO *p8)
         BN_free(eckey->priv_key);
     }
     eckey->priv_key = BN_new();
-    //BN_zero(eckey->priv_key);
 
     //setup keyBlob
     blobLenAndData = OPENSSL_malloc(keyBlobRawLen + KEYBLOB_HEADER_LEN);
@@ -482,11 +539,12 @@ static int my_priv_decode (EVP_PKEY *pkey, PKCS8_PRIV_KEY_INFO *p8)
     }
     memcpy(blobLenAndData, &keyBlobRawLen, KEYBLOB_HEADER_LEN);
     memcpy(blobLenAndData + KEYBLOB_HEADER_LEN, keyBlobRaw, keyBlobRawLen);
-    int ret = EC_EX_DATA_set_data(&eckey->method_data, (void *)blobLenAndData, ec_extra_data_dup_func,
-        ec_extra_data_free_func, ec_extra_data_clear_free_func);
+    int ret = EC_KEY_set_ex_data(eckey, CRYPTO_EX_INDEX_EC_KEY, (void *)blobLenAndData);
     if (ret <= 0) {
-        printf("EC_EX_DATA_set_data in my_priv_decode failed\n");
+        printf("EC_KEY_set_ex_data in my_priv_decode failed\n");
         goto ecliberr;       
+    } else {
+        blobLenAndData = NULL;
     }
 
     EVP_PKEY_assign_EC_KEY(pkey, eckey);
@@ -494,7 +552,7 @@ static int my_priv_decode (EVP_PKEY *pkey, PKCS8_PRIV_KEY_INFO *p8)
     return 1;
 
  ecliberr:
-    ECerr(EC_F_ECKEY_PRIV_DECODE, ERR_R_EC_LIB);
+    ECerr(EC_F_ECKEY_PRIV_DECODE, EC_R_DECODE_ERROR);
     if (eckey)
         EC_KEY_free(eckey);
     if (blobLenAndData) {
@@ -513,12 +571,11 @@ static int my_priv_encode (PKCS8_PRIV_KEY_INFO *p8, const EVP_PKEY *pk)
 
     //get group parameter first. get reference code from ec_asn1.c
     ASN1_OBJECT* pval = NULL;
-
     const EC_GROUP *group;
     int nid;
 
     if ((group = EC_KEY_get0_group(ec_key)) == NULL) {
-        ECerr(EC_F_ECKEY_PARAM2TYPE, EC_R_MISSING_PARAMETERS);
+        ECerr(EC_F_ECKEY_PARAM2TYPE, EC_R_UNKNOWN_GROUP);
         return 0;
     }
     if ((nid = EC_GROUP_get_curve_name(group)) != 0){
@@ -534,7 +591,7 @@ static int my_priv_encode (PKCS8_PRIV_KEY_INFO *p8, const EVP_PKEY *pk)
     EC_KEY_set_enc_flags(ec_key, old_flags | EC_PKEY_NO_PUBKEY);
 
     //copy keyblob data into memory
-    ext_data = EC_EX_DATA_get_data(ec_key->method_data, ec_extra_data_dup_func, ec_extra_data_free_func, ec_extra_data_clear_free_func);
+    ext_data = EC_KEY_get_ex_data(ec_key, CRYPTO_EX_INDEX_EC_KEY);
     if (ext_data == NULL) {
         printf("Get ec_key ext data failed\n");
         return 0;
@@ -612,7 +669,7 @@ static int bind_helper(ENGINE *e, const char *id)
     if (orig_meth != NULL){
         pkey_method.pkey_id = orig_meth->pkey_id;
         EVP_PKEY_meth_copy(&pkey_method, orig_meth);
-        pkey_method.keygen = my_ec_pkeygen;
+        pkey_method.keygen = my_pkey_ec_keygen;
     }
     else{
         printf("Failed to get built-in EC pkey method\n");
@@ -637,12 +694,15 @@ static int bind_helper(ENGINE *e, const char *id)
         printf("Failed to get builtin EC pkey ASN1 method\n");
     }
 
-    //setup ECDSA methods
-    const ECDSA_METHOD * orig_ecdsa_methods = ECDSA_get_default_method();
-    if (orig_ecdsa_methods == NULL) {
-        printf("Failed to get builtin ECDSA_METHOD method\n");
+    const EC_KEY_METHOD * ec_methods = get_ec_key_method();
+    if (ec_methods == NULL) {
+        printf("get_ec_key_method failed\n");
+        goto end;       
     }
-    ecdsa_methds.ecdsa_do_verify = orig_ecdsa_methods->ecdsa_do_verify;
+    if (ENGINE_set_EC(e, ec_methods) <= 0) {
+        printf("ENGINE_set_EC failed\n");
+        goto end;       
+    }
 
     //setup engine
     if (!ENGINE_set_id(e, engine_id)){
@@ -654,8 +714,7 @@ static int bind_helper(ENGINE *e, const char *id)
         goto end;
     }
     if (!ENGINE_set_pkey_meths(e, get_pkey_meths) ||
-        !ENGINE_set_pkey_asn1_meths(e, get_pkey_asn1_meths) ||
-        !ENGINE_set_ECDSA(e, &ecdsa_methds) ||
+        !ENGINE_set_pkey_asn1_meths(e, get_pkey_asn1_meths) ||        
         !ENGINE_set_load_privkey_function(e, load_privkey)
         ){
         printf("ENGINE_set failed\n");
