@@ -1,25 +1,28 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <openssl/engine.h>
-#include <openssl/evp.h>
-#include <openssl/ossl_typ.h>
-#include <openssl/bn.h>
-#include <openssl/pem.h>
-#include <openssl/x509.h>
-
 #include <internal/evp_int.h>
 #include <internal/asn1_int.h>
+#include <openssl/x509.h>
 #include <internal/x509_int.h>
 
 #include <evp/evp_locl.h>
 #include <ec/ec_lcl.h>
 #include <asn1/asn1_locl.h>
 
+#include <openssl/engine.h>
+#include <openssl/evp.h>
+#include <openssl/ossl_typ.h>
+#include <openssl/bn.h>
+#include <openssl/pem.h>
+
+
+
+
 //ep11 API
-int RemoteGenerateECDSAKeyPair(const unsigned char *curveOIDData, size_t curveOIDLength, unsigned char *privateKey, size_t *privateKeyLen, 
+extern int RemoteGenerateECDSAKeyPair(const unsigned char *curveOIDData, size_t curveOIDLength, unsigned char *privateKey, size_t *privateKeyLen,
     unsigned char *pubKey, size_t *pubKeyLen);
-int RemoteSignSingle(const unsigned char * privateKeyBlob, size_t keyBlobLen, const unsigned char * dgst, size_t dgstLen, unsigned char * signature, size_t *signatureLen);
+extern int RemoteSignSingle(const unsigned char * privateKeyBlob, size_t keyBlobLen, const unsigned char * dgst, size_t dgstLen, unsigned char * signature, size_t *signatureLen);
 
 const static int KEYBLOB_HEADER_LEN = sizeof(size_t);
 //openssl functions, not in .h files
