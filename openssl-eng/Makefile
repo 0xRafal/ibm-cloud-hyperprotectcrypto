@@ -20,7 +20,7 @@ DEPFLAGS = -MMD -MP -MF build/$*.d
            -pthread\
            -ldl -lcurl -lcrypto         
 LDFLAGS += -shared -L/usr/local/openssl-1.1.1c/lib -L/usr/local/Cellar/protobuf/3.7.1/lib -L/usr/local/Cellar/grpc/1.22.0/lib -L/usr/local/lib \
-	-lprotobuf -pthread -lgrpc++ -lgrpc -pthread -ldl -lcurl -lcrypto
+	-lprotobuf -pthread /usr/local/Cellar/grpc/1.22.0/lib/libgrpc++.a /usr/local/Cellar/grpc/1.22.0/lib/libgrpc.a -pthread -ldl -lcurl /usr/local/openssl-1.1.1c/lib/libcrypto.a
 
 ifeq ($(SYSTEM),Darwin)
 #shall use openssl 1.1.1c, not darwin default
