@@ -30,7 +30,7 @@ EVP_PKEY *PEM_read_bio_PrivateKey(BIO *bp, EVP_PKEY **x, pem_password_cb *cb, vo
 
 //openssl functions implementation, not exported
 //set public key from oct string
-EC_KEY *o2i_ECPublicKey(EC_KEY **a, const unsigned char **in, long len)
+static EC_KEY *my_o2i_ECPublicKey(EC_KEY **a, const unsigned char **in, long len)
 {
     EC_KEY *ret = NULL;
 
@@ -365,14 +365,14 @@ static int my_ec_key_simple_generate_key(EC_KEY *eckey)
         goto err;
     }
     //save public key to EC_KEY public key structure
-    ret_ec_key = o2i_ECPublicKey(&eckey, (const unsigned char **)&pubKeyCoordinates, pubKeyLen);
+    ret_ec_key = my_o2i_ECPublicKey(&eckey, (const unsigned char **)&pubKeyCoordinates, pubKeyLen);
     if (ret_ec_key != NULL) {
-        pubKeyCoordinates -= pubKeyLen; //o2i_ECPublicKey change input pointer pubKeyCoordinates, need to change it back to free
+        pubKeyCoordinates -= pubKeyLen; //my_o2i_ECPublicKey change input pointer pubKeyCoordinates, need to change it back to free
         ok = 1;
     }
     else {
         EC_KEY_set_ex_data(eckey, CRYPTO_EX_INDEX_EC_KEY, NULL);
-        printf("o2i_ECPublicKey return NULL\n");
+        printf("my_o2i_ECPublicKey return NULL\n");
     }
 err:
     if (pubKeyCoordinates) {

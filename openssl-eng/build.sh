@@ -1,9 +1,8 @@
 #!/bin/bash
 
-#rm -rdf cxx
+rm -rdf grpc util 
 cp -r ../cxx/grpc grpc
 cp -r ../cxx/util util
 
-make check
 make all
-#rm -rdf cxx
+rm -rdf grpc util
