@@ -14,10 +14,10 @@ SPDX-License-Identifier: Apache-2.0
 #include "grpc/server.pb.h"
 #include "util/credentials.h"
 
-std::string instance = "<HPCS-instance>";
+std::string instance = "ed1548cc-d4eb-4938-85ee-5f1c3274df64";
 std::string endpoint = "https://iam.test.cloud.ibm.com";
-std::string apiKey = "IAM API key";
-std::string url = "address:port";
+std::string apiKey = "1FHfWIVM5Hv54-NIkK5RJLFqH1ftSlnO3eu8y9l_J0Ce";
+std::string url = "ep11.us-south.hs-crypto.test.cloud.ibm.com:9266";
 
 typedef int test(std::shared_ptr<grep11::Crypto::Stub> client);
 
