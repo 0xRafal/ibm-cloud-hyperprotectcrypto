@@ -31,7 +31,7 @@ LDFLAGS += -L/usr/local/openssl-1.1.1c/lib -L/usr/local/Cellar/protobuf/3.7.1/li
 
 else
 #libssl-dev, libprotobuf10 library installed to /usr/lib/x86_64-linux-gnu (default lib)
-    LDFLAGS += -l:libgrpc++.a -l:libgrpc.a -l:libcrypto.a 
+    LDFLAGS += -lgrpc++ -lgrpc -l:libcrypto_NE.so.1.1 
 endif
 
 LDFLAGS += -lgrpc++_reflection -lprotobuf -pthread -ldl -lcurl
