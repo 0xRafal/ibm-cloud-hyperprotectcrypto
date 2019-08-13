@@ -105,6 +105,10 @@ static ECDSA_SIG *my_ossl_ecdsa_sign_sig(const unsigned char *dgst, int dgst_len
         ECerr(EC_F_OSSL_ECDSA_SIGN_SIG, ERR_R_MALLOC_FAILURE);
         goto err;
     }*/
+    if ((m = BN_new()) == NULL) {
+    	ECerr(EC_F_OSSL_ECDSA_SIGN_SIG, ERR_R_MALLOC_FAILURE);
+    	goto err;
+    }
 
     order = EC_GROUP_get0_order(group);
     i = BN_num_bits(order);

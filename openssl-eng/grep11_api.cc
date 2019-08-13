@@ -155,21 +155,23 @@ int RemoteSignSingle(const unsigned char * privateKeyBlob, size_t keyBlobLen,
     grep11::SignSingleResponse signSingleResponse;
 
     (*signSingleRequest.mutable_mech()) = grep11::ep11Mechanism(CKM_ECDSA);
-    signSingleRequest.set_privkey((const char *)privateKeyBlob, keyBlobLen);
-    signSingleRequest.set_data((const char *)dgst, dgstLen);
+    signSingleRequest.set_privkey((const char*)privateKeyBlob, keyBlobLen);
+    signSingleRequest.set_data((const char*)dgst, dgstLen);
 
     grpc::Status status = client->SignSingle(&context2, signSingleRequest, &signSingleResponse);
 	if (!status.ok() ) {
         std::cout << "Error in SignSingle "<< status.error_message() << std::endl;
         return 0;
     }
-	if (*signatureLen < signSingleResponse.ByteSizeLong()) {
+
+	size_t retSignaturelen = signSingleResponse.signature().length();
+	if (*signatureLen < retSignaturelen) {
         printf("Signature returned [%ld] is longer than signature buffer size [%ld]\n",
-        		signSingleResponse.ByteSizeLong(), *signatureLen);
+        		retSignaturelen, *signatureLen);
         return 0;
 	}
-	*signatureLen = signSingleResponse.ByteSizeLong();
-	memcpy(signature, signSingleResponse.signature().c_str(), signSingleResponse.ByteSizeLong());
+	*signatureLen = retSignaturelen;
+	memcpy(signature, signSingleResponse.signature().c_str(), retSignaturelen);
 	PrintBuf("Signature", signature, *signatureLen);
 
 	std::cout << "Data signed" << std::endl;
