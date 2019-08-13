@@ -9,6 +9,7 @@
 #include "../cxx/util/typemaps.h"
 #include "../cxx/util/credentials.h"
 #include <openssl/sha.h>
+using namespace std;
 
 std::string instance = "ed1548cc-d4eb-4938-85ee-5f1c3274df64";
 std::string endpoint = "https://iam.test.cloud.ibm.com";
@@ -36,6 +37,55 @@ std::string sha256(std::string data) {
     return std::string((char*)buffer, SHA256_DIGEST_LENGTH);
 }
 extern "C" {
+void PrintBuf(const char * header, const unsigned char* data, size_t len)
+{
+	size_t i;
+	if (data == NULL || len == 0) {
+		printf("Invalid parameter [%p][%l]", data, len);
+		return;
+	}
+	if (header != NULL) {
+		printf("---%s---\n", header);
+	}
+	for (i = 1; i<= len; i++) {
+		printf("%02X:", data[i-1]);
+		if (i % 16 == 0) {
+			printf("\n");
+		}
+	}
+	printf("\n\n");
+}
+
+const unsigned char * GetCoordPointer(const unsigned char * SPKI, size_t leng, size_t* remainderLen)
+{
+	const unsigned char * p = SPKI;
+
+	if (SPKI == NULL || remainderLen == NULL) {
+		return NULL;
+	}
+	size_t leftlen = leng;
+	//skip first sequence
+	if (*p != 0x30 || p[1] + 2 > leftlen) {
+		return NULL;
+	}
+	leftlen -= 2;
+	p += 2; //skip first sequence
+
+	if (*p != 0x30 || p[1] + 2 > leftlen) {
+		return NULL;
+	}
+	leftlen -= 2 + p[1];
+	p += 2 + p[1]; //skip embedded sequence: 2 oid
+
+	//this is coordinates bit string
+	if (*p != 0x03 || p[1] + 2 > leftlen) {
+		return NULL;
+	}
+	leftlen -= 3;
+	p += 3; //skip 03:42:00 before coordinates bytes
+	*remainderLen = leftlen;
+	return p;
+}
 int RemoteGenerateECDSAKeyPair(const unsigned char *curveOIDData, size_t curveOIDLength,
 		unsigned char *privateKey, size_t *privateKeyLen, unsigned char *pubKey, size_t *pubKeyLen)
 {
@@ -63,6 +113,30 @@ int RemoteGenerateECDSAKeyPair(const unsigned char *curveOIDData, size_t curveOI
     if (!status.ok() ) {
         std::cout << "Error in GeneratedKey "<< status.error_message() << std::endl;
         return 0;
+    }
+    //copy private key data back
+    string str = generateKeyPairResponse.privkey();
+   	//PrintBuf("Private key", (const unsigned char *)str.c_str(), str.length());
+    if (str.length() <= *privateKeyLen) {
+    	memcpy(privateKey, str.c_str(), str.length());
+    	*privateKeyLen = str.length();
+     } else {
+    	printf("Private key length [%d] is longer than buffer size [%d]\n",
+    			str.length(), *privateKeyLen);
+    	return 0;
+    }
+    //copy SPKI coordinates back
+    size_t remain = 0;
+    str = generateKeyPairResponse.pubkey();
+	PrintBuf("SPKI data", (const unsigned char *)str.c_str(), str.length());
+    const unsigned char * p = GetCoordPointer((const unsigned char *)str.c_str(), str.length(), &remain);
+    if (p != NULL && remain >= *pubKeyLen) {
+    	//there may be extra data after SPKI
+    	memcpy(pubKey, p, *pubKeyLen);
+    	PrintBuf("Public SPKI coordinates", p, *pubKeyLen);
+    } else {
+    	printf("Invalid SPKI data\n");
+    	return 0;
     }
     std::cout << "Generated ECDSA key pair" << std::endl;
 	return 1;

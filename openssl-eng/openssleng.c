@@ -339,7 +339,8 @@ static int my_ec_key_simple_generate_key(EC_KEY *eckey)
     }
     int bits = BN_num_bits(order);
     privateKeyLen = sizeof(privateKey);
-    pubKeyLen = 2 * (bits+7)/8 + 1; //there is one header byte, "04" as uncompressed 
+    int tmp = (bits+7)/8;
+    pubKeyLen = 2 * tmp + 1; //there is one header byte, "04" as uncompressed
     pubKeyCoordinates = OPENSSL_malloc(pubKeyLen); 
     if (pubKeyCoordinates == NULL) {
         printf("my_ec_key_simple_generate_key OPENSSL_malloc %d failed\n", (int)pubKeyLen);
