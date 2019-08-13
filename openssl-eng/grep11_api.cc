@@ -144,7 +144,36 @@ int RemoteGenerateECDSAKeyPair(const unsigned char *curveOIDData, size_t curveOI
 int RemoteSignSingle(const unsigned char * privateKeyBlob, size_t keyBlobLen,
 		const unsigned char * dgst, size_t dgstLen, unsigned char * signature, size_t *signatureLen)
 {
-	return 0;
+    auto call_credentials = new grep11::IAMPerRPCCredentials(instance, endpoint, apiKey);
+    auto creds = grpc::CompositeChannelCredentials(
+        grpc::SslCredentials(grpc::SslCredentialsOptions()),
+        grpc::MetadataCredentialsFromPlugin(std::unique_ptr<grpc::MetadataCredentialsPlugin>(call_credentials)));
+    auto client = std::shared_ptr<grep11::Crypto::Stub>(grep11::Crypto::NewStub(grpc::CreateChannel(url, creds)));
+
+    grpc::ClientContext context2;
+    grep11::SignSingleRequest signSingleRequest;
+    grep11::SignSingleResponse signSingleResponse;
+
+    (*signSingleRequest.mutable_mech()) = grep11::ep11Mechanism(CKM_ECDSA);
+    signSingleRequest.set_privkey((const char *)privateKeyBlob, keyBlobLen);
+    signSingleRequest.set_data((const char *)dgst, dgstLen);
+
+    grpc::Status status = client->SignSingle(&context2, signSingleRequest, &signSingleResponse);
+	if (!status.ok() ) {
+        std::cout << "Error in SignSingle "<< status.error_message() << std::endl;
+        return 0;
+    }
+	if (*signatureLen < signSingleResponse.ByteSizeLong()) {
+        printf("Signature returned [%ld] is longer than signature buffer size [%ld]\n",
+        		signSingleResponse.ByteSizeLong(), *signatureLen);
+        return 0;
+	}
+	*signatureLen = signSingleResponse.ByteSizeLong();
+	memcpy(signature, signSingleResponse.signature().c_str(), signSingleResponse.ByteSizeLong());
+	PrintBuf("Signature", signature, *signatureLen);
+
+	std::cout << "Data signed" << std::endl;
+	return 1;
 }
 
 int testECDSASignature(std::shared_ptr<grep11::Crypto::Stub> client){
