@@ -4,6 +4,10 @@
 
 # Visual Studio IDE
 .vscode
-
+.cproject
+.project
+.settings/
+openssl-eng/build/
+openssl-eng/openssleng_ep11-test.gofile
 cxx/build
 node_modules
