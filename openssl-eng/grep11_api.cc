@@ -11,10 +11,10 @@
 #include <openssl/sha.h>
 using namespace std;
 
-std::string instance = "ed1548cc-d4eb-4938-85ee-5f1c3274df64";
+std::string instance = "13ba9eaa-96a9-4105-94da-05c80dd60566";
 std::string endpoint = "https://iam.test.cloud.ibm.com";
-std::string apiKey = "1FHfWIVM5Hv54-NIkK5RJLFqH1ftSlnO3eu8y9l_J0Ce";
-std::string url = "ep11.us-south.hs-crypto.test.cloud.ibm.com:9266";
+std::string apiKey = "pn8tuYQ-xXfBIRiAz9OWK0VqlEbhBCSYh3GeUtp0siX2";
+std::string url = "ep11.us-east.hs-crypto.test.cloud.ibm.com:9195";
 
 #define  ASN_EC_P256        "\x06\x08\x2a\x86\x48\xce\x3d\x03\x01\x07"
 #define  ASN_EC_P256_BYTES  10
