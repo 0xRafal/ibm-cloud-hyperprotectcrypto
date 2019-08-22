@@ -11,10 +11,10 @@
 #include <openssl/sha.h>
 using namespace std;
 
-std::string instance = "ed1548cc-d4eb-4938-85ee-5f1c3274df64";
-std::string endpoint = "https://iam.test.cloud.ibm.com";
-std::string apiKey = "1FHfWIVM5Hv54-NIkK5RJLFqH1ftSlnO3eu8y9l_J0Ce";
-std::string url = "ep11.us-south.hs-crypto.test.cloud.ibm.com:9266";
+//std::string instance = "ed1548cc-d4eb-4938-85ee-5f1c3274df64";
+//std::string endpoint = "https://iam.test.cloud.ibm.com";
+//std::string apiKey = "1FHfWIVM5Hv54-NIkK5RJLFqH1ftSlnO3eu8y9l_J0Ce";
+std::string url = "zlxcn002.torolab.ibm.com:9266";
 
 #define  ASN_EC_P256        "\x06\x08\x2a\x86\x48\xce\x3d\x03\x01\x07"
 #define  ASN_EC_P256_BYTES  10
@@ -89,11 +89,11 @@ const unsigned char * GetCoordPointer(const unsigned char * SPKI, size_t leng, s
 int RemoteGenerateECDSAKeyPair(const unsigned char *curveOIDData, size_t curveOIDLength,
 		unsigned char *privateKey, size_t *privateKeyLen, unsigned char *pubKey, size_t *pubKeyLen)
 {
-    auto call_credentials = new grep11::IAMPerRPCCredentials(instance, endpoint, apiKey);
-    auto creds = grpc::CompositeChannelCredentials(
-        grpc::SslCredentials(grpc::SslCredentialsOptions()),
-        grpc::MetadataCredentialsFromPlugin(std::unique_ptr<grpc::MetadataCredentialsPlugin>(call_credentials)));
-    auto client = std::shared_ptr<grep11::Crypto::Stub>(grep11::Crypto::NewStub(grpc::CreateChannel(url, creds)));
+    //auto call_credentials = new grep11::IAMPerRPCCredentials(instance, endpoint, apiKey);
+    //auto creds = grpc::CompositeChannelCredentials(
+    //    grpc::SslCredentials(grpc::SslCredentialsOptions()),
+    //    grpc::MetadataCredentialsFromPlugin(std::unique_ptr<grpc::MetadataCredentialsPlugin>(call_credentials)));
+    auto client = std::shared_ptr<grep11::Crypto::Stub>(grep11::Crypto::NewStub(grpc::CreateChannel(url, grpc::InsecureChannelCredentials())));
 
     grpc::ClientContext context1;
     grep11::GenerateKeyPairRequest generateECKeypairRequest;
@@ -144,11 +144,11 @@ int RemoteGenerateECDSAKeyPair(const unsigned char *curveOIDData, size_t curveOI
 int RemoteSignSingle(const unsigned char * privateKeyBlob, size_t keyBlobLen,
 		const unsigned char * dgst, size_t dgstLen, unsigned char * signature, size_t *signatureLen)
 {
-    auto call_credentials = new grep11::IAMPerRPCCredentials(instance, endpoint, apiKey);
-    auto creds = grpc::CompositeChannelCredentials(
-        grpc::SslCredentials(grpc::SslCredentialsOptions()),
-        grpc::MetadataCredentialsFromPlugin(std::unique_ptr<grpc::MetadataCredentialsPlugin>(call_credentials)));
-    auto client = std::shared_ptr<grep11::Crypto::Stub>(grep11::Crypto::NewStub(grpc::CreateChannel(url, creds)));
+    //auto call_credentials = new grep11::IAMPerRPCCredentials(instance, endpoint, apiKey);
+    //auto creds = grpc::CompositeChannelCredentials(
+    //    grpc::SslCredentials(grpc::SslCredentialsOptions()),
+    //    grpc::MetadataCredentialsFromPlugin(std::unique_ptr<grpc::MetadataCredentialsPlugin>(call_credentials)));
+    auto client = std::shared_ptr<grep11::Crypto::Stub>(grep11::Crypto::NewStub(grpc::CreateChannel(url, grpc::InsecureChannelCredentials())));
 
     grpc::ClientContext context2;
     grep11::SignSingleRequest signSingleRequest;
