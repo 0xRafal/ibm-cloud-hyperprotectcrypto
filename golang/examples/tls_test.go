@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ibm-developer/ibm-cloud-hyperprotectcrypto/golang/ep11"
-	pb "github.com/ibm-developer/ibm-cloud-hyperprotectcrypto/golang/grpc"
-	"github.com/ibm-developer/ibm-cloud-hyperprotectcrypto/golang/util"
+	"github.com/vpaprots/ibm-cloud-hyperprotectcrypto/golang/ep11"
+	pb "github.com/vpaprots/ibm-cloud-hyperprotectcrypto/golang/grpc"
+	"github.com/vpaprots/ibm-cloud-hyperprotectcrypto/golang/util"
 	grpc "google.golang.org/grpc"
 )
 
