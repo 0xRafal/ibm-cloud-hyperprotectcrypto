@@ -2,7 +2,7 @@
 
 1. [Install Golang](https://golang.org/doc/install)
 2. [Change GREP11 server address](examples/server_test.go#L18) in `examples/server_test.go` file
-3. cd `$GOPATH/src/github.com/vpaprots/ibm-cloud-hyperprotectcrypto/golang/examples`
+3. cd `$GOPATH/src/github.com/0xRafal/ibm-cloud-hyperprotectcrypto/golang/examples`
 4. Execute the example by issuing the command `go test -v`
 5. You will see similiar output as the following from the sample program:
 
@@ -26,7 +26,7 @@
 	=== RUN   Example_tls
 	--- PASS: Example_tls (0.05s)
 	PASS
-	ok  	github.com/vpaprots/ibm-cloud-hyperprotectcrypto/golang/examples	1.667s
+	ok  	github.com/0xRafal/ibm-cloud-hyperprotectcrypto/golang/examples	1.667s
     ```
 
 ## General function call workflow

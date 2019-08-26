@@ -19,8 +19,8 @@ import (
 	"sync"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/vpaprots/ibm-cloud-hyperprotectcrypto/golang/ep11"
-	pb "github.com/vpaprots/ibm-cloud-hyperprotectcrypto/golang/grpc"
+	"github.com/0xRafal/ibm-cloud-hyperprotectcrypto/golang/ep11"
+	pb "github.com/0xRafal/ibm-cloud-hyperprotectcrypto/golang/grpc"
 	"google.golang.org/grpc/status"
 )
 

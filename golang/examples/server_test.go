@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/vpaprots/ibm-cloud-hyperprotectcrypto/golang/ep11"
-	pb "github.com/vpaprots/ibm-cloud-hyperprotectcrypto/golang/grpc"
-	"github.com/vpaprots/ibm-cloud-hyperprotectcrypto/golang/util"
+	"github.com/0xRafal/ibm-cloud-hyperprotectcrypto/golang/ep11"
+	pb "github.com/0xRafal/ibm-cloud-hyperprotectcrypto/golang/grpc"
+	"github.com/0xRafal/ibm-cloud-hyperprotectcrypto/golang/util"
 	uuid "github.com/satori/go.uuid"
 	grpc "google.golang.org/grpc"
 )
